@@ -9,7 +9,7 @@
 import torch
 from frea.agent.agent_utils.agent_state_encoder import EncoderModel
 from frea.util.run_util import load_config
-from pytorch_lightning.utilities.cloud_io import load as pl_load
+from frea.util.checkpoint import load_trusted_checkpoint as pl_load
 import os.path as osp
 import argparse
 from collections import OrderedDict

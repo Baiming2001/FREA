@@ -16,7 +16,7 @@ from frea.agent.PlanT.dataset import split_large_BB, generate_batch
 from frea.agent.agent_utils.explainability_utils import *
 from frea.scenario.scenario_manager.carla_data_provider import CarlaDataProvider
 from einops import rearrange
-from pytorch_lightning.utilities.cloud_io import load as pl_load
+from frea.util.checkpoint import load_trusted_checkpoint as pl_load
 import numpy as np
 from rdp import rdp
 import torch.nn as nn

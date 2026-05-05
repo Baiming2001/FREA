@@ -18,6 +18,7 @@ from fnmatch import fnmatch
 from torch.distributions import Normal
 import torch.nn.functional as F
 
+from frea.util.checkpoint import load_trusted_checkpoint
 from frea.util.torch_util import CUDA, CPU, hidden_init
 from frea.agent.base_policy import BasePolicy
 from frea.gym_carla.net import ActorPPO, CriticPPO
@@ -215,7 +216,7 @@ class PPO(BasePolicy):
         if os.path.isfile(filepath):
             self.logger.log(f'>> Loading {self.name} model from {filepath}', 'yellow')
             with open(filepath, 'rb') as f:
-                checkpoint = torch.load(f)
+                checkpoint = load_trusted_checkpoint(f)
             self.policy.load_state_dict(checkpoint['policy'])
             self.value.load_state_dict(checkpoint['value'])
             self.policy_optim.load_state_dict(checkpoint['policy_optim'])

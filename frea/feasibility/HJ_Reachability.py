@@ -16,6 +16,7 @@ import torch.optim as optim
 from fnmatch import fnmatch
 from torch.distributions import Normal
 from frea.gym_carla.net import CriticPPO, CriticTwin
+from frea.util.checkpoint import load_trusted_checkpoint
 from frea.util.torch_util import CUDA, CPU
 
 
@@ -185,7 +186,7 @@ class HJR:
         if os.path.isfile(filepath):
             self.logger.log(f'>> Loading Safety network {self.name} from {os.path.basename(filepath)}', color="yellow")
             with open(filepath, 'rb') as f:
-                checkpoint = torch.load(f)
+                checkpoint = load_trusted_checkpoint(f)
             self.Qh_net.load_state_dict(checkpoint['Qh_net'])
             self.Qh_target_net.load_state_dict(checkpoint['Qh_net'])
             self.Vh_net.load_state_dict(checkpoint['Vh_net'])
