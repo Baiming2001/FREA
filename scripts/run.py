@@ -42,6 +42,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--num_scenario', '-ns', type=int, default=2, help='num of scenarios we run in one episode')
     parser.add_argument('--save_video', action='store_true')
+    parser.add_argument('--save_camera_frames', action='store_true')
+    parser.add_argument('--camera_fps', type=int, default=10)
     parser.add_argument('--spectator', '-sp', action='store_true', default=False)
     parser.add_argument('--frame_skip', '-fs', type=int, default=1, help='skip of frame in each step')
     parser.add_argument('--port', type=int, default=2000, help='port to communicate with carla')

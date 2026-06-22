@@ -1,0 +1,21 @@
+scenario_type_dir: 'frea/scenario/config/scenario_type'
+scenario_type: 'Scenario3_Town03_Town04_Town05_1x.json'
+policy_type: 'standard'
+learnable: False
+feasibility: False
+reward_shaping: False
+
+route_dir: 'frea/scenario/scenario_data/route'
+scenario_id: 3
+route_id: null
+
+model_path: ''
+standard_action: False
+buffer_capacity: 100
+
+save_freq: 20
+train_episode:
+  Town03: 2000
+  Town04: 2000
+  Town05: 2000
+gamma: 0.99

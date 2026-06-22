@@ -8,6 +8,7 @@
 @source  ：This project is modified from <https://github.com/trust-ai/SafeBench>
 """
 import copy
+import os
 import time
 import weakref
 
@@ -16,6 +17,7 @@ import pygame
 from skimage.transform import resize
 import gym
 import carla
+from PIL import Image
 
 from frea.gym_carla.envs.route_planner import RoutePlanner
 from frea.gym_carla.envs.misc import (
@@ -58,6 +60,11 @@ class CarlaEnv(gym.Env):
         self.env_params = env_params
         self.auto_ego = env_params['auto_ego']
         self.enable_sem = env_params['enable_sem']
+        self.save_camera_frames = env_params.get('save_camera_frames', False)
+        self.camera_fps = env_params.get('camera_fps', 10)
+        self.fixed_delta_seconds = env_params.get('fixed_delta_seconds', 0.1)
+        self.capture_stride = max(1, round((1 / self.fixed_delta_seconds) / self.camera_fps))
+        self.output_dir = env_params.get('output_dir')
         self.ego_agent_learnable = env_params['ego_agent_learnable']
         self.scenario_agent_learnable = env_params['scenario_agent_learnable']
         self.mode = env_params['mode']
@@ -65,6 +72,8 @@ class CarlaEnv(gym.Env):
 
         self.lidar_sensor = None
         self.camera_sensor = None
+        self.ego_front_camera_sensor = None
+        self.cbv_front_camera_sensor = None
         self.sem_sensor = None
         self.CBVs_collision_sensor = {}
         self.lidar_data = None
@@ -76,6 +85,8 @@ class CarlaEnv(gym.Env):
         self.route = None
         self.CBVs_collision = {}
         self.ego_collide = False
+        self.front_camera_frame_idx = 0
+        self.cbv_camera_target_id = None
         self.search_radius = env_params['search_radius']
         self.agent_obs_type = env_params['agent_obs_type']
         self.agent_state_encoder = agent_state_encoder
@@ -136,6 +147,16 @@ class CarlaEnv(gym.Env):
             self.camera_bp.set_attribute('fov', '110')
             # Set the time in seconds between sensor captures
             self.camera_bp.set_attribute('sensor_tick', '0.02')
+
+            # front-view camera sensors for saving ego/CBV image sequences
+            self.front_camera_img = np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
+            self.cbv_front_camera_img = np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
+            self.front_camera_trans = carla.Transform(carla.Location(x=0.8, z=1.7))
+            self.front_camera_bp = CarlaDataProvider._blueprint_library.find('sensor.camera.rgb')
+            self.front_camera_bp.set_attribute('image_size_x', str(self.obs_size))
+            self.front_camera_bp.set_attribute('image_size_y', str(self.obs_size))
+            self.front_camera_bp.set_attribute('fov', '110')
+            self.front_camera_bp.set_attribute('sensor_tick', str(self.fixed_delta_seconds))
 
             # sem camera sensor
             if self.enable_sem:
@@ -225,8 +246,73 @@ class CarlaEnv(gym.Env):
                         CarlaDataProvider.add_CBV(self.ego_vehicle, CBV)
 
                     # update the nearby vehicles around the CBV
-                    self.CBVs_nearby_vehicles[CBV.id] = get_nearby_vehicles(CBV, self.search_radius)
+                        self.CBVs_nearby_vehicles[CBV.id] = get_nearby_vehicles(CBV, self.search_radius)
         self.scenario_manager.update_CBV_nearby_vehicles(self.CBVs_nearby_vehicles)
+
+    def _remove_cbv_front_camera(self):
+        if self.cbv_front_camera_sensor is not None:
+            self.cbv_front_camera_sensor.stop()
+            self.cbv_front_camera_sensor.destroy()
+            self.cbv_front_camera_sensor = None
+        self.cbv_camera_target_id = None
+
+    def _refresh_cbv_front_camera(self):
+        if not self.save_camera_frames or self.eval_mode != 'render':
+            return
+
+        if len(self.CBVs) == 0:
+            self._remove_cbv_front_camera()
+            return
+
+        target_cbv = min(
+            self.CBVs.values(),
+            key=lambda cbv: self.ego_vehicle.get_location().distance(cbv.get_location())
+        )
+        if self.cbv_camera_target_id == target_cbv.id and self.cbv_front_camera_sensor is not None:
+            return
+
+        self._remove_cbv_front_camera()
+        self_weakref = weakref.ref(self)
+
+        def get_cbv_camera_img(env_self, data):
+            array = np.frombuffer(data.raw_data, dtype=np.dtype("uint8"))
+            array = np.reshape(array, (data.height, data.width, 4))
+            array = array[:, :, :3]
+            array = array[:, :, ::-1]
+            env_self.cbv_front_camera_img = array
+
+        self.cbv_front_camera_sensor = self.world.spawn_actor(
+            self.front_camera_bp, self.front_camera_trans, attach_to=target_cbv
+        )
+        self.cbv_front_camera_sensor.listen(
+            lambda data, self_ref=self_weakref: get_cbv_camera_img(self_ref(), data) if self_ref() else None
+        )
+        self.cbv_camera_target_id = target_cbv.id
+
+    def _save_front_camera_frame(self):
+        if not self.save_camera_frames or self.eval_mode != 'render':
+            return
+        if self.time_step % self.capture_stride != 0:
+            return
+
+        scenario_name = f"Scenario{self.config.scenario_id}"
+        map_name = self.world.get_map().name.split('/')[-1]
+        base_dir = os.path.join(
+            self.output_dir,
+            f"{scenario_name}_{map_name}",
+            "camera_frames",
+            f"data_{self.config.data_id:04d}"
+        )
+        ego_dir = os.path.join(base_dir, "ego_front")
+        cbv_dir = os.path.join(base_dir, "cbv_front")
+        os.makedirs(ego_dir, exist_ok=True)
+        os.makedirs(cbv_dir, exist_ok=True)
+
+        frame_name = f"frame_{self.front_camera_frame_idx:04d}.png"
+        Image.fromarray(self.front_camera_img).save(os.path.join(ego_dir, frame_name))
+        if self.cbv_front_camera_sensor is not None and self.cbv_camera_target_id is not None:
+            Image.fromarray(self.cbv_front_camera_img).save(os.path.join(cbv_dir, frame_name))
+        self.front_camera_frame_idx += 1
 
     def reset(self, config, env_id):
         self.config = config
@@ -256,6 +342,7 @@ class CarlaEnv(gym.Env):
 
         # set controlled bv
         self.CBVs_selection()
+        self._refresh_cbv_front_camera()
 
         # Get actors' polygon list (for visualization)
         if self.birdeye_render:
@@ -295,10 +382,25 @@ class CarlaEnv(gym.Env):
                 array = array[:, :, ::-1]
                 ego_self.camera_img = array
 
+            def get_front_camera_img(ego_self, data):
+                array = np.frombuffer(data.raw_data, dtype=np.dtype("uint8"))
+                array = np.reshape(array, (data.height, data.width, 4))
+                array = array[:, :, :3]
+                array = array[:, :, ::-1]
+                ego_self.front_camera_img = array
+
             # Add sem_camera sensor
             if self.enable_sem:
                 self.sem_sensor = self.world.spawn_actor(self.sem_bp, self.sem_trans, attach_to=self.ego_vehicle)
                 self.sem_sensor.listen(lambda data, self_ref=self_weakref: get_sem_img(self_ref(), data) if self_ref() else None)
+
+            if self.save_camera_frames:
+                self.ego_front_camera_sensor = self.world.spawn_actor(
+                    self.front_camera_bp, self.front_camera_trans, attach_to=self.ego_vehicle
+                )
+                self.ego_front_camera_sensor.listen(
+                    lambda data, self_ref=self_weakref: get_front_camera_img(self_ref(), data) if self_ref() else None
+                )
 
             def get_sem_img(ego_self, data):
                 array = np.frombuffer(data.raw_data, dtype=np.dtype("uint8"))
@@ -393,10 +495,12 @@ class CarlaEnv(gym.Env):
 
         # select the new CBV
         self.CBVs_selection() if self.scenario_manager.running else None
+        self._refresh_cbv_front_camera()
 
         updated_CBVs_info = self._get_info(next_info=False)  # info of new CBV
 
         self.visualize_actors()  # visualize the controlled bv and the waypoints in clients side after tick
+        self._save_front_camera_frame()
 
         # Update timesteps
         self.time_step += 1
@@ -676,6 +780,11 @@ class CarlaEnv(gym.Env):
             self.camera_sensor.stop()
             self.camera_sensor.destroy()
             self.camera_sensor = None
+        if self.ego_front_camera_sensor is not None:
+            self.ego_front_camera_sensor.stop()
+            self.ego_front_camera_sensor.destroy()
+            self.ego_front_camera_sensor = None
+        self._remove_cbv_front_camera()
         if self.sem_sensor is not None:
             self.sem_sensor.stop()
             self.sem_sensor.destroy()
@@ -742,6 +851,9 @@ class CarlaEnv(gym.Env):
         self.goal_waypoint = None
         self.ego_collide = False
         self.CBVs_collision = {}
+        self.front_camera_frame_idx = 0
+        self.front_camera_img = np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
+        self.cbv_front_camera_img = np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
 
     def clean_up(self):
         # remove temp variables

@@ -51,6 +51,7 @@ class CarlaRunner:
         self.output_dir = scenario_config['output_dir']
         self.mode = scenario_config['mode']
         self.save_video = scenario_config['save_video']
+        self.save_camera_frames = scenario_config['save_camera_frames']
 
         self.eval_mode = scenario_config['eval_mode']
         self.viz_route = scenario_config['viz_route']
@@ -78,11 +79,15 @@ class CarlaRunner:
             'goal_point_radius': 2,  # the default goal point radius
             'auto_ego': scenario_config['auto_ego'],
             'viz_route': self.viz_route,  # whether to visualize the route
+            'save_camera_frames': self.save_camera_frames,  # whether to save ego/CBV front-camera frames
+            'camera_fps': scenario_config['camera_fps'],  # target FPS for saved front-camera frames
+            'fixed_delta_seconds': self.fixed_delta_seconds,  # simulator step size
             'ego_agent_learnable': agent_config['learnable'],  # whether the ego agent is a learnable method
             'scenario_agent_learnable': scenario_config['learnable'],  # whether the scenario agent is a learnable method
             'agent_obs_type': agent_config['obs_type'],  # default 0 (only 4 dimensions states )
             'CBV_selection': self.CBV_selection,  # the method using for selection the controlled bv
             'ROOT_DIR': scenario_config['ROOT_DIR'],
+            'output_dir': self.output_dir,
             'signalized_junction': False,  # whether the signal controls the junction
             'warm_up_steps': 4,  # number of ticks after spawning the vehicles
             'disable_lidar': True,  # show bird-eye view lidar or not
@@ -136,6 +141,7 @@ class CarlaRunner:
             pretrained_cbv=agent_config['pretrain_cbv']
         )
         self.logger = Logger(**logger_kwargs)
+        self.env_params['output_dir'] = self.logger.output_dir
 
         # prepare parameters
         if self.mode == 'train_agent':
