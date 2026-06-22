@@ -27,9 +27,9 @@ class AdvBehaviorSingle(BasicScenario):
         super(AdvBehaviorSingle, self).__init__("AdvBehaviorSingle", None, world)
         self.timeout = timeout
         self.ego_vehicle = ego_vehicle
+        self._map = CarlaDataProvider.get_map()
         self.signalized_junction = env_params['signalized_junction']
         if self.signalized_junction:
-            self._map = CarlaDataProvider.get_map()
             self.last_ego_waypoint = self._map.get_waypoint(self.ego_vehicle.get_location())
             self.traffic_light = CarlaDataProvider.get_next_traffic_light(self.ego_vehicle, False)
             if self.traffic_light is None:
@@ -43,6 +43,72 @@ class AdvBehaviorSingle(BasicScenario):
 
         self.acc_max = env_params['continuous_accel_range'][1]
         self.steering_max = env_params['continuous_steer_range'][1]
+        self.fixed_delta_seconds = env_params.get('fixed_delta_seconds', 0.1)
+        self.scenario_operation = ScenarioOperation()
+        self.special_actors = {}
+        self.special_actor_indices = {}
+        self.scripted_parameters = {}
+        self.script_step = 0
+
+    def set_special_actors(self, special_actors, scripted_parameters=None):
+        self.special_actors = special_actors or {}
+        self.scripted_parameters = scripted_parameters or {}
+        actor_list = [actor for actor in self.special_actors.values() if actor is not None]
+        self.scenario_operation.other_actors = actor_list
+        self.scenario_operation.vehicle_controller = {}
+        self.scenario_operation._init_vehicle_controller()
+        self.special_actor_indices = {}
+        for index, (role_name, actor) in enumerate(self.special_actors.items()):
+            if actor is not None:
+                self.special_actor_indices[role_name] = index
+
+    def _follow_lane_with_pid(self, role_name, target_speed, lookahead_distance=8.0):
+        actor = self.special_actors.get(role_name)
+        actor_index = self.special_actor_indices.get(role_name)
+        if actor is None or actor_index is None:
+            return
+
+        waypoint = self._map.get_waypoint(
+            CarlaDataProvider.get_location(actor),
+            project_to_road=True,
+            lane_type=carla.LaneType.Driving
+        )
+        if waypoint is None:
+            return
+
+        next_waypoints = waypoint.next(lookahead_distance)
+        if not next_waypoints:
+            return
+
+        self.scenario_operation.drive_to_target_followlane(actor_index, next_waypoints[0].transform, target_speed)
+
+    def _update_scripted_special_actors(self):
+        if not self.special_actors:
+            return
+
+        leading_speed = self.scripted_parameters.get('leading_target_speed_mps', 7.0)
+        other_speed = self.scripted_parameters.get('other_target_speed_mps', 7.0)
+        brake_after_seconds = self.scripted_parameters.get('leading_brake_after_seconds', 6.0)
+        brake_duration_seconds = self.scripted_parameters.get('leading_brake_duration_seconds', 3.0)
+        post_brake_speed = self.scripted_parameters.get('leading_post_brake_speed_mps', 0.0)
+
+        brake_start_step = int(brake_after_seconds / self.fixed_delta_seconds)
+        brake_end_step = brake_start_step + int(brake_duration_seconds / self.fixed_delta_seconds)
+
+        if self.special_actors.get('leading') is not None:
+            if self.script_step < brake_start_step:
+                self._follow_lane_with_pid('leading', leading_speed)
+            elif self.script_step < brake_end_step:
+                self.scenario_operation.brake(self.special_actors['leading'])
+            elif post_brake_speed > 0.0:
+                self._follow_lane_with_pid('leading', post_brake_speed)
+            else:
+                self.scenario_operation.brake(self.special_actors['leading'])
+
+        if self.special_actors.get('other') is not None:
+            self._follow_lane_with_pid('other', other_speed)
+
+        self.script_step += 1
 
     def convert_actions(self, scenario_actions):
         acc = scenario_actions[0]  # continuous action: acc
@@ -90,6 +156,8 @@ class AdvBehaviorSingle(BasicScenario):
                 scenario_action = scenario_actions[CBV_id]
                 act = self.convert_actions(scenario_action)
                 CBV.apply_control(act)  # apply the control of the CBV on the next tick
+
+        self._update_scripted_special_actors()
 
         if self.signalized_junction:  # if the signal controls the junction, the traffic need to be updated
             self.update_traffic_light()

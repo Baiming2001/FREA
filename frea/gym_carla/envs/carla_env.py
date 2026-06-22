@@ -8,6 +8,7 @@
 @source  ：This project is modified from <https://github.com/trust-ai/SafeBench>
 """
 import copy
+import json
 import os
 import time
 import weakref
@@ -72,8 +73,6 @@ class CarlaEnv(gym.Env):
 
         self.lidar_sensor = None
         self.camera_sensor = None
-        self.ego_front_camera_sensor = None
-        self.cbv_front_camera_sensor = None
         self.sem_sensor = None
         self.CBVs_collision_sensor = {}
         self.lidar_data = None
@@ -86,7 +85,10 @@ class CarlaEnv(gym.Env):
         self.CBVs_collision = {}
         self.ego_collide = False
         self.front_camera_frame_idx = 0
-        self.cbv_camera_target_id = None
+        self.actor_camera_sensors = {}
+        self.actor_camera_imgs = {}
+        self.camera_actor_ids = {}
+        self.camera_actor_roles = ['ego', 'leading', 'other']
         self.search_radius = env_params['search_radius']
         self.agent_obs_type = env_params['agent_obs_type']
         self.agent_state_encoder = agent_state_encoder
@@ -148,15 +150,24 @@ class CarlaEnv(gym.Env):
             # Set the time in seconds between sensor captures
             self.camera_bp.set_attribute('sensor_tick', '0.02')
 
-            # front-view camera sensors for saving ego/CBV image sequences
-            self.front_camera_img = np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
-            self.cbv_front_camera_img = np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
-            self.front_camera_trans = carla.Transform(carla.Location(x=0.8, z=1.7))
+            # actor-view camera sensors for saving multi-view image sequences
             self.front_camera_bp = CarlaDataProvider._blueprint_library.find('sensor.camera.rgb')
             self.front_camera_bp.set_attribute('image_size_x', str(self.obs_size))
             self.front_camera_bp.set_attribute('image_size_y', str(self.obs_size))
             self.front_camera_bp.set_attribute('fov', '110')
             self.front_camera_bp.set_attribute('sensor_tick', str(self.fixed_delta_seconds))
+            self.camera_view_transforms = {
+                'front': carla.Transform(carla.Location(x=0.8, z=1.7), carla.Rotation(yaw=0.0)),
+                'front_left': carla.Transform(carla.Location(x=0.8, y=-0.35, z=1.7), carla.Rotation(yaw=-45.0)),
+                'front_right': carla.Transform(carla.Location(x=0.8, y=0.35, z=1.7), carla.Rotation(yaw=45.0))
+            }
+            self.actor_camera_imgs = {
+                role_name: {
+                    view_name: np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
+                    for view_name in self.camera_view_transforms
+                }
+                for role_name in self.camera_actor_roles
+            }
 
             # sem camera sensor
             if self.enable_sem:
@@ -249,45 +260,92 @@ class CarlaEnv(gym.Env):
                         self.CBVs_nearby_vehicles[CBV.id] = get_nearby_vehicles(CBV, self.search_radius)
         self.scenario_manager.update_CBV_nearby_vehicles(self.CBVs_nearby_vehicles)
 
-    def _remove_cbv_front_camera(self):
-        if self.cbv_front_camera_sensor is not None:
-            self.cbv_front_camera_sensor.stop()
-            self.cbv_front_camera_sensor.destroy()
-            self.cbv_front_camera_sensor = None
-        self.cbv_camera_target_id = None
+    def _get_camera_target_actor(self, role_name):
+        if role_name == 'ego':
+            return self.ego_vehicle
 
-    def _refresh_cbv_front_camera(self):
+        if self.ego_vehicle is None:
+            return None
+
+        special_actors = CarlaDataProvider.get_special_actors_by_ego(self.ego_vehicle)
+        return special_actors.get(role_name)
+
+    def _remove_actor_camera_sensors(self):
+        for role_sensors in self.actor_camera_sensors.values():
+            for sensor in role_sensors.values():
+                if sensor is not None and sensor.is_alive:
+                    sensor.stop()
+                    sensor.destroy()
+        self.actor_camera_sensors = {}
+        self.camera_actor_ids = {}
+
+    def _sync_actor_camera_sensors(self):
         if not self.save_camera_frames or self.eval_mode != 'render':
             return
-
-        if len(self.CBVs) == 0:
-            self._remove_cbv_front_camera()
-            return
-
-        target_cbv = min(
-            self.CBVs.values(),
-            key=lambda cbv: self.ego_vehicle.get_location().distance(cbv.get_location())
-        )
-        if self.cbv_camera_target_id == target_cbv.id and self.cbv_front_camera_sensor is not None:
-            return
-
-        self._remove_cbv_front_camera()
         self_weakref = weakref.ref(self)
 
-        def get_cbv_camera_img(env_self, data):
+        def get_actor_camera_img(env_self, role_name, view_name, data):
             array = np.frombuffer(data.raw_data, dtype=np.dtype("uint8"))
             array = np.reshape(array, (data.height, data.width, 4))
             array = array[:, :, :3]
             array = array[:, :, ::-1]
-            env_self.cbv_front_camera_img = array
+            env_self.actor_camera_imgs[role_name][view_name] = array
 
-        self.cbv_front_camera_sensor = self.world.spawn_actor(
-            self.front_camera_bp, self.front_camera_trans, attach_to=target_cbv
-        )
-        self.cbv_front_camera_sensor.listen(
-            lambda data, self_ref=self_weakref: get_cbv_camera_img(self_ref(), data) if self_ref() else None
-        )
-        self.cbv_camera_target_id = target_cbv.id
+        for role_name in self.camera_actor_roles:
+            actor = self._get_camera_target_actor(role_name)
+            current_actor_id = actor.id if actor is not None else None
+            previous_actor_id = self.camera_actor_ids.get(role_name)
+
+            if current_actor_id == previous_actor_id and role_name in self.actor_camera_sensors:
+                continue
+
+            if role_name in self.actor_camera_sensors:
+                for sensor in self.actor_camera_sensors[role_name].values():
+                    if sensor is not None and sensor.is_alive:
+                        sensor.stop()
+                        sensor.destroy()
+                self.actor_camera_sensors.pop(role_name, None)
+
+            if actor is None:
+                self.camera_actor_ids.pop(role_name, None)
+                continue
+
+            self.actor_camera_sensors[role_name] = {}
+            for view_name, transform in self.camera_view_transforms.items():
+                sensor = self.world.spawn_actor(self.front_camera_bp, transform, attach_to=actor)
+                sensor.listen(
+                    lambda data, role=role_name, view=view_name, self_ref=self_weakref:
+                    get_actor_camera_img(self_ref(), role, view, data) if self_ref() else None
+                )
+                self.actor_camera_sensors[role_name][view_name] = sensor
+            self.camera_actor_ids[role_name] = current_actor_id
+
+    def _write_scene_metadata(self, base_dir):
+        meta_path = os.path.join(base_dir, 'meta.json')
+        os.makedirs(base_dir, exist_ok=True)
+        if os.path.exists(meta_path):
+            return
+
+        actors_meta = {}
+        for role_name in self.camera_actor_roles:
+            actor = self._get_camera_target_actor(role_name)
+            if actor is not None:
+                actors_meta[role_name] = {
+                    'id': actor.id,
+                    'type_id': actor.type_id
+                }
+
+        metadata = {
+            'scenario_id': self.config.scenario_id,
+            'data_id': self.config.data_id,
+            'map': self.world.get_map().name.split('/')[-1],
+            'camera_fps': self.camera_fps,
+            'views': list(self.camera_view_transforms.keys()),
+            'actors': actors_meta,
+            'parameters': self.config.parameters
+        }
+        with open(meta_path, 'w', encoding='utf-8') as meta_file:
+            json.dump(metadata, meta_file, indent=2)
 
     def _save_front_camera_frame(self):
         if not self.save_camera_frames or self.eval_mode != 'render':
@@ -303,15 +361,16 @@ class CarlaEnv(gym.Env):
             "camera_frames",
             f"data_{self.config.data_id:04d}"
         )
-        ego_dir = os.path.join(base_dir, "ego_front")
-        cbv_dir = os.path.join(base_dir, "cbv_front")
-        os.makedirs(ego_dir, exist_ok=True)
-        os.makedirs(cbv_dir, exist_ok=True)
+        self._write_scene_metadata(base_dir)
 
         frame_name = f"frame_{self.front_camera_frame_idx:04d}.png"
-        Image.fromarray(self.front_camera_img).save(os.path.join(ego_dir, frame_name))
-        if self.cbv_front_camera_sensor is not None and self.cbv_camera_target_id is not None:
-            Image.fromarray(self.cbv_front_camera_img).save(os.path.join(cbv_dir, frame_name))
+        for role_name, role_images in self.actor_camera_imgs.items():
+            if role_name not in self.actor_camera_sensors:
+                continue
+            for view_name, image_array in role_images.items():
+                view_dir = os.path.join(base_dir, role_name, view_name)
+                os.makedirs(view_dir, exist_ok=True)
+                Image.fromarray(image_array).save(os.path.join(view_dir, frame_name))
         self.front_camera_frame_idx += 1
 
     def reset(self, config, env_id):
@@ -342,7 +401,7 @@ class CarlaEnv(gym.Env):
 
         # set controlled bv
         self.CBVs_selection()
-        self._refresh_cbv_front_camera()
+        self._sync_actor_camera_sensors()
 
         # Get actors' polygon list (for visualization)
         if self.birdeye_render:
@@ -382,25 +441,13 @@ class CarlaEnv(gym.Env):
                 array = array[:, :, ::-1]
                 ego_self.camera_img = array
 
-            def get_front_camera_img(ego_self, data):
-                array = np.frombuffer(data.raw_data, dtype=np.dtype("uint8"))
-                array = np.reshape(array, (data.height, data.width, 4))
-                array = array[:, :, :3]
-                array = array[:, :, ::-1]
-                ego_self.front_camera_img = array
-
             # Add sem_camera sensor
             if self.enable_sem:
                 self.sem_sensor = self.world.spawn_actor(self.sem_bp, self.sem_trans, attach_to=self.ego_vehicle)
                 self.sem_sensor.listen(lambda data, self_ref=self_weakref: get_sem_img(self_ref(), data) if self_ref() else None)
 
             if self.save_camera_frames:
-                self.ego_front_camera_sensor = self.world.spawn_actor(
-                    self.front_camera_bp, self.front_camera_trans, attach_to=self.ego_vehicle
-                )
-                self.ego_front_camera_sensor.listen(
-                    lambda data, self_ref=self_weakref: get_front_camera_img(self_ref(), data) if self_ref() else None
-                )
+                self._sync_actor_camera_sensors()
 
             def get_sem_img(ego_self, data):
                 array = np.frombuffer(data.raw_data, dtype=np.dtype("uint8"))
@@ -495,7 +542,7 @@ class CarlaEnv(gym.Env):
 
         # select the new CBV
         self.CBVs_selection() if self.scenario_manager.running else None
-        self._refresh_cbv_front_camera()
+        self._sync_actor_camera_sensors()
 
         updated_CBVs_info = self._get_info(next_info=False)  # info of new CBV
 
@@ -771,6 +818,30 @@ class CarlaEnv(gym.Env):
     def _terminal(self):
         return not self.scenario_manager.running
 
+    def _write_scene_result(self):
+        if not self.save_camera_frames or self.output_dir is None or self.config is None:
+            return
+
+        scenario_name = f"Scenario{self.config.scenario_id}"
+        map_name = self.world.get_map().name.split('/')[-1]
+        base_dir = os.path.join(
+            self.output_dir,
+            f"{scenario_name}_{map_name}",
+            "camera_frames",
+            f"data_{self.config.data_id:04d}"
+        )
+        os.makedirs(base_dir, exist_ok=True)
+        result_path = os.path.join(base_dir, 'scene_result.json')
+        final_record = self.scenario_manager.running_record[-1] if self.scenario_manager.running_record else {}
+        result = {
+            'ego_collision': self.ego_collide,
+            'time_steps': self.time_step,
+            'route_completion': final_record.get('route_complete'),
+            'current_game_time': final_record.get('current_game_time')
+        }
+        with open(result_path, 'w', encoding='utf-8') as result_file:
+            json.dump(result, result_file, indent=2)
+
     def _remove_sensor(self):
         if self.lidar_sensor is not None:
             self.lidar_sensor.stop()
@@ -780,11 +851,7 @@ class CarlaEnv(gym.Env):
             self.camera_sensor.stop()
             self.camera_sensor.destroy()
             self.camera_sensor = None
-        if self.ego_front_camera_sensor is not None:
-            self.ego_front_camera_sensor.stop()
-            self.ego_front_camera_sensor.destroy()
-            self.ego_front_camera_sensor = None
-        self._remove_cbv_front_camera()
+        self._remove_actor_camera_sensors()
         if self.sem_sensor is not None:
             self.sem_sensor.stop()
             self.sem_sensor.destroy()
@@ -852,12 +919,18 @@ class CarlaEnv(gym.Env):
         self.ego_collide = False
         self.CBVs_collision = {}
         self.front_camera_frame_idx = 0
-        self.front_camera_img = np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
-        self.cbv_front_camera_img = np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
+        self.actor_camera_sensors = {}
+        self.camera_actor_ids = {}
+        self.actor_camera_imgs = {
+            role_name: {
+                view_name: np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
+                for view_name in getattr(self, 'camera_view_transforms', {'front': None})
+            }
+            for role_name in self.camera_actor_roles
+        }
 
     def clean_up(self):
-        # remove temp variables
-        self._reset_variables()
+        self._write_scene_result()
 
         # remove the render sensor only when evaluating
         self._remove_sensor()
@@ -867,3 +940,6 @@ class CarlaEnv(gym.Env):
 
         # remove the ego vehicle after removing all the sensors
         self._remove_ego()
+
+        # remove temp variables
+        self._reset_variables()

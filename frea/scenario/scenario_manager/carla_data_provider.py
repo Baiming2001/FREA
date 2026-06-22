@@ -415,12 +415,25 @@ class CarlaDataProvider(object):
         CarlaDataProvider._ego_vehicle_route[ego.id] = route
         CarlaDataProvider.egos.append(ego)
         CarlaDataProvider.goal_CBV_dis[ego.id] = {}  # create an empty dictionary for each ego car
-        CarlaDataProvider.scenario_actors[ego.id] = {'BVs': {}, 'CBVs': {}, 'CBVs_reach_goal': {}}  # create an empty dictionary for each scenario to record all BVs
+        CarlaDataProvider.scenario_actors[ego.id] = {
+            'BVs': {},
+            'CBVs': {},
+            'CBVs_reach_goal': {},
+            'special_actors': {}
+        }  # create an empty dictionary for each scenario to record all scenario actors
 
     @staticmethod
     def set_scenario_actors(ego, actors):
         for actor in actors:
             CarlaDataProvider.scenario_actors[ego.id]['BVs'][actor.id] = actor
+
+    @staticmethod
+    def set_special_actor(ego, role_name, actor):
+        CarlaDataProvider.scenario_actors[ego.id]['special_actors'][role_name] = actor
+
+    @staticmethod
+    def get_special_actors_by_ego(ego):
+        return CarlaDataProvider.scenario_actors[ego.id]['special_actors']
 
     @staticmethod
     def get_scenario_actors():

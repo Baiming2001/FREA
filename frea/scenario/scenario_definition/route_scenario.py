@@ -8,6 +8,7 @@
 @source  ：This project is modified from <https://github.com/trust-ai/SafeBench>
 """
 import time
+import copy
 import numpy as np
 import carla
 
@@ -62,8 +63,74 @@ class RouteScenario():
         self.next_intersection_loc = CarlaDataProvider.get_next_intersection_location(self.route[0][0].location)
         self.unactivated_actors = []
         self.CBVs_nearby_vehicles = {}
+        self.special_actors = {}
         self.criteria = self._create_criteria()
         self.scenario_instance = AdvBehaviorSingle(self.world, self.ego_vehicle, env_params)  # create the scenario instance
+
+    def _get_scenario_parameters(self):
+        parameters = copy.deepcopy(self.config.parameters) if self.config.parameters is not None else {}
+        if self.config.scenario_id == 3:
+            scenario3_defaults = {
+                'leading_distance_m': 18.0,
+                'other_distance_back_m': 10.0,
+                'other_lane_side': 'left',
+                'leading_target_speed_mps': 7.0,
+                'other_target_speed_mps': 7.0,
+                'leading_brake_after_seconds': 6.0,
+                'leading_brake_duration_seconds': 3.0,
+                'leading_post_brake_speed_mps': 0.0
+            }
+            scenario3_defaults.update(parameters)
+            return scenario3_defaults
+        return parameters
+
+    def _shift_waypoint(self, waypoint, distance, forward=True):
+        if waypoint is None:
+            return None
+        candidates = waypoint.next(distance) if forward else waypoint.previous(distance)
+        return candidates[0] if candidates else waypoint
+
+    def _get_adjacent_driving_lane(self, waypoint, lane_side):
+        candidate = waypoint.get_left_lane() if lane_side == 'left' else waypoint.get_right_lane()
+        if candidate is None or candidate.lane_type != carla.LaneType.Driving:
+            fallback = waypoint.get_right_lane() if lane_side == 'left' else waypoint.get_left_lane()
+            if fallback is not None and fallback.lane_type == carla.LaneType.Driving:
+                return fallback
+            return None
+        return candidate
+
+    def _spawn_special_actor(self, role_name, transform, vehicle_model):
+        actor = CarlaDataProvider.request_new_actor(
+            vehicle_model,
+            transform,
+            rolename=role_name,
+            autopilot=False
+        )
+        actor.set_autopilot(False, CarlaDataProvider.get_traffic_manager_port())
+        self.special_actors[role_name] = actor
+        CarlaDataProvider.set_special_actor(self.ego_vehicle, role_name, actor)
+        return actor
+
+    def _initialize_scenario3_actors(self):
+        scenario_params = self._get_scenario_parameters()
+        carla_map = self.world.get_map()
+        ego_start_waypoint = carla_map.get_waypoint(
+            self.route[0][0].location,
+            project_to_road=True,
+            lane_type=carla.LaneType.Driving
+        )
+        if ego_start_waypoint is None:
+            raise RuntimeError('Failed to get ego start waypoint for Scenario 3')
+
+        leading_waypoint = self._shift_waypoint(ego_start_waypoint, scenario_params['leading_distance_m'], forward=True)
+        adjacent_lane = self._get_adjacent_driving_lane(ego_start_waypoint, scenario_params['other_lane_side'])
+        if adjacent_lane is None:
+            raise RuntimeError('Failed to find an adjacent driving lane for Scenario 3 other vehicle')
+        other_waypoint = self._shift_waypoint(adjacent_lane, scenario_params['other_distance_back_m'], forward=False)
+
+        self._spawn_special_actor('leading', leading_waypoint.transform, 'vehicle.tesla.model3')
+        self._spawn_special_actor('other', other_waypoint.transform, 'vehicle.audi.tt')
+        self.scenario_instance.set_special_actors(self.special_actors, scenario_params)
 
     def _global_route_to_waypoints(self):
         waypoints_list = []
@@ -148,6 +215,9 @@ class RouteScenario():
         return amount, spawn_points
 
     def initialize_actors(self):
+        if self.config.scenario_id == 3:
+            self._initialize_scenario3_actors()
+
         amount, spawn_points = self.get_location_nearby_spawn_points()
         # don't activate all the actors when initialization
         new_actors = CarlaDataProvider.request_new_batch_actors(
