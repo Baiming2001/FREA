@@ -52,6 +52,8 @@ class CarlaRunner:
         self.mode = scenario_config['mode']
         self.save_video = scenario_config['save_video']
         self.save_camera_frames = scenario_config['save_camera_frames']
+        self.camera_only = scenario_config.get('camera_only', False)
+        self.progress_interval = scenario_config.get('progress_interval', 20)
 
         self.eval_mode = scenario_config['eval_mode']
         self.viz_route = scenario_config['viz_route']
@@ -75,7 +77,7 @@ class CarlaRunner:
             'mode': self.mode,  # the mode of the script
             'eval_mode': self.eval_mode,  # the mode of the evaluation
             'search_radius': 25,  # the default search radius
-            'traffic_intensity': 0.3 if self.mode == 'eval' else 0.6,  # the default traffic intensity
+            'traffic_intensity': scenario_config.get('traffic_intensity', 0.3 if self.mode == 'eval' else 0.6),  # the default traffic intensity
             'goal_point_radius': 2,  # the default goal point radius
             'auto_ego': scenario_config['auto_ego'],
             'viz_route': self.viz_route,  # whether to visualize the route
@@ -88,8 +90,10 @@ class CarlaRunner:
             'CBV_selection': self.CBV_selection,  # the method using for selection the controlled bv
             'ROOT_DIR': scenario_config['ROOT_DIR'],
             'output_dir': self.output_dir,
+            'camera_only': self.camera_only,
+            'progress_interval': self.progress_interval,
             'signalized_junction': False,  # whether the signal controls the junction
-            'warm_up_steps': 4,  # number of ticks after spawning the vehicles
+            'warm_up_steps': scenario_config.get('warm_up_steps', 4),  # number of ticks after spawning the vehicles
             'disable_lidar': True,  # show bird-eye view lidar or not
             'enable_sem': False,  # whether to enable the semantic camera
             'display_size': 512,  # screen size of one bird-eye view window
@@ -98,7 +102,7 @@ class CarlaRunner:
             'max_past_step': 1,  # the number of past steps to draw
             'continuous_accel_range': [-3.0, 3.0],  # continuous acceleration range
             'continuous_steer_range': [-0.3, 0.3],  # continuous steering angle range
-            'max_episode_step': 300,  # maximum time steps per episode
+            'max_episode_step': scenario_config.get('max_episode_step', 300),  # maximum time steps per episode
             'max_waypt': 12,  # maximum number of waypoints
             'lidar_bin': 0.0625,  # bin size of lidar sensor (meter)
             'out_lane_thres': 4,  # threshold for out of lane (meter)
@@ -165,6 +169,8 @@ class CarlaRunner:
                 self.logger.create_eval_dir(load_existing_results=True, scenario_id=self.scenario_config['scenario_id'])
             else:
                 self.logger.log('>> Evaluation Mode, rendering result', 'yellow')
+                if self.camera_only:
+                    self.logger.log('>> Camera-only mode: skip pygame/birdeye rendering and only export camera frames', 'yellow')
         else:
             raise NotImplementedError(f"Unsupported mode: {self.mode}.")
 
@@ -344,6 +350,7 @@ class CarlaRunner:
             self.agent_policy.set_ego_and_route(self.env.get_ego_vehicles(), infos)
 
             score_list = {s_i: [] for s_i in range(num_sampled_scenario)}
+            step_idx = 0
             while not self.env.all_scenario_done():
                 # get action from agent policy and scenario policy (assume using one batch)
                 ego_actions = self.agent_policy.get_action(obs, infos, deterministic=True)
@@ -354,10 +361,14 @@ class CarlaRunner:
 
                 infos = next_transition_infos
                 obs = next_transition_obs
+                step_idx += 1
 
                 # save video
                 if self.save_video:
                     self.logger.add_frame(pygame.surfarray.array3d(self.display).transpose(1, 0, 2))
+
+                if step_idx % self.progress_interval == 0:
+                    self.logger.log(self.env.format_progress(step_idx), 'yellow')
 
                 # accumulate scores of corresponding scenario
                 reward_idx = 0
@@ -442,7 +453,7 @@ class CarlaRunner:
             # initialize map and render
             self.current_map = m_i  # record the current running map name
             self._init_world(m_i)
-            if self.eval_mode == 'render':
+            if self.eval_mode == 'render' and not self.camera_only:
                 self._init_renderer()
 
             # create scenarios within the vectorized wrapper

@@ -186,6 +186,21 @@ class VectorWrapper():
         else:
             return False
 
+    def format_progress(self, step_idx):
+        progress_parts = []
+        for env_index, current_env in enumerate(self.env_list):
+            if self.finished_env[env_index] or current_env.config is None:
+                continue
+            latest_record = current_env.scenario_manager.running_record[-1] if current_env.scenario_manager.running_record else {}
+            route_completion = latest_record.get('route_complete', 0)
+            progress_parts.append(
+                f'env{env_index}:data_{current_env.config.data_id:04d} step={current_env.time_step}/{current_env.max_episode_step} route={route_completion:.1f}%'
+            )
+
+        if not progress_parts:
+            return f'>> Progress step={step_idx}: all scenarios finished'
+        return f'>> Progress step={step_idx}: ' + ' | '.join(progress_parts)
+
     def clean_up(self):
         # clean the temp list in the render
         self.birdeye_render.clean_up() if self.birdeye_render else None

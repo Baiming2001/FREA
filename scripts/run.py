@@ -44,6 +44,8 @@ if __name__ == '__main__':
     parser.add_argument('--save_video', action='store_true')
     parser.add_argument('--save_camera_frames', action='store_true')
     parser.add_argument('--camera_fps', type=int, default=10)
+    parser.add_argument('--camera_only', action='store_true')
+    parser.add_argument('--progress_interval', type=int, default=20)
     parser.add_argument('--spectator', '-sp', action='store_true', default=False)
     parser.add_argument('--frame_skip', '-fs', type=int, default=1, help='skip of frame in each step')
     parser.add_argument('--port', type=int, default=2000, help='port to communicate with carla')
@@ -80,6 +82,9 @@ if __name__ == '__main__':
 
             # only save video when the eval mode is 'render'
             if args.eval_mode != 'render':
+                args.save_video = False
+
+            if args.camera_only:
                 args.save_video = False
 
             # main entry with a selected mode

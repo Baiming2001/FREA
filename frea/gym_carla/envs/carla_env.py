@@ -88,7 +88,7 @@ class CarlaEnv(gym.Env):
         self.actor_camera_sensors = {}
         self.actor_camera_imgs = {}
         self.camera_actor_ids = {}
-        self.camera_actor_roles = ['ego', 'leading', 'other']
+        self.camera_actor_roles = ['ego', 'other']
         self.search_radius = env_params['search_radius']
         self.agent_obs_type = env_params['agent_obs_type']
         self.agent_state_encoder = agent_state_encoder
