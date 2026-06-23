@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 FILENAME_PATTERN = re.compile(
-    r"^(?P<map>Town\d+)_type(?P<type_id>\d+)_subtype(?P<subtype_id>\d+)_scenario(?P<scenario_number>\d+)\.txt$"
+    r"^(?P<map>Town\d+(?:HD)?)_type(?P<type_id>\d+)_subtype(?P<subtype_id>\d+)_scenario(?P<scenario_number>\d+)\.txt$"
 )
 
 
