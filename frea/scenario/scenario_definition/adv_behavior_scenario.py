@@ -45,7 +45,7 @@ class AdvBehaviorSingle(BasicScenario):
         self.acc_max = env_params['continuous_accel_range'][1]
         self.steering_max = env_params['continuous_steer_range'][1]
         self.fixed_delta_seconds = env_params.get('fixed_delta_seconds', 0.1)
-        self.scenario_operation = ScenarioOperation()
+        self.scenario_operation = ScenarioOperation(fixed_delta_seconds=self.fixed_delta_seconds)
         self.special_actors = {}
         self.special_actor_indices = {}
         self.scripted_parameters = {}
@@ -108,13 +108,16 @@ class AdvBehaviorSingle(BasicScenario):
         brake_end_step = brake_start_step + int(brake_duration_seconds / self.fixed_delta_seconds)
         hold_steps_needed = max(1, int(scene_end_after_stop_seconds / self.fixed_delta_seconds))
 
+        leading_lookahead_distance = self.scripted_parameters.get('leading_lookahead_distance_m', 14.0)
+        other_lookahead_distance = self.scripted_parameters.get('other_lookahead_distance_m', 10.0)
+
         if self.special_actors.get('leading') is not None:
             if self.script_step < brake_start_step:
-                self._follow_lane_with_pid('leading', leading_speed)
+                self._follow_lane_with_pid('leading', leading_speed, lookahead_distance=leading_lookahead_distance)
             elif self.script_step < brake_end_step:
                 self.scenario_operation.brake(self.special_actors['leading'])
             elif post_brake_speed > 0.0:
-                self._follow_lane_with_pid('leading', post_brake_speed)
+                self._follow_lane_with_pid('leading', post_brake_speed, lookahead_distance=leading_lookahead_distance)
             else:
                 self.scenario_operation.brake(self.special_actors['leading'])
 
@@ -126,7 +129,7 @@ class AdvBehaviorSingle(BasicScenario):
                 target_other_reference_speed,
                 other_speed_variation
             )
-            self._follow_lane_with_pid('other', target_other_speed)
+            self._follow_lane_with_pid('other', target_other_speed, lookahead_distance=other_lookahead_distance)
 
         if self.script_step >= brake_end_step:
             leading_actor = self.special_actors.get('leading')

@@ -21,10 +21,11 @@ class ScenarioOperation(object):
         This class defines some atomic operation for actors. All actor's behaviors should be combination of these operations
     """
 
-    def __init__(self):
+    def __init__(self, fixed_delta_seconds=0.1):
         self.other_actors = []
         self.need_accelerated = False
         self.vehicle_controller = {}
+        self.fixed_delta_seconds = fixed_delta_seconds
 
     def initialize_vehicle_actors(self, actor_transform_list, actor_type_list):
         other_actor_list = []
@@ -42,8 +43,7 @@ class ScenarioOperation(object):
         return self.other_actors
 
     def _init_vehicle_controller(self):
-        fps = 30
-        _dt = 1.0 / fps
+        _dt = self.fixed_delta_seconds
         _args_lateral_dict = {'K_P': 1.95, 'K_I': 0.05, 'K_D': 0.2, 'dt': _dt}
         _args_longitudinal_dict = {'K_P': 1.0, 'K_I': 0.05, 'K_D': 0, 'dt': _dt}
         for i in range(len(self.other_actors)):
