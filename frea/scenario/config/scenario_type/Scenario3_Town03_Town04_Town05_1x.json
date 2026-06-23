@@ -5,6 +5,8 @@
         "route_id": 5,
         "risk_level": null,
         "parameters": {
+            "scenario_type_id": 3,
+            "scenario_subtype_id": 1,
             "leading_distance_m": 18.0,
             "other_distance_back_m": 10.0,
             "other_lane_side": "left",
@@ -21,6 +23,8 @@
         "route_id": 9,
         "risk_level": null,
         "parameters": {
+            "scenario_type_id": 3,
+            "scenario_subtype_id": 1,
             "leading_distance_m": 18.0,
             "other_distance_back_m": 10.0,
             "other_lane_side": "left",
@@ -37,6 +41,8 @@
         "route_id": 4,
         "risk_level": null,
         "parameters": {
+            "scenario_type_id": 3,
+            "scenario_subtype_id": 1,
             "leading_distance_m": 18.0,
             "other_distance_back_m": 10.0,
             "other_lane_side": "left",

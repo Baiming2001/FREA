@@ -88,6 +88,7 @@ class CarlaEnv(gym.Env):
         self.actor_camera_sensors = {}
         self.actor_camera_imgs = {}
         self.camera_actor_ids = {}
+        self.metadata_actor_roles = ['ego', 'leading', 'other']
         self.camera_actor_roles = ['ego', 'other']
         self.search_radius = env_params['search_radius']
         self.agent_obs_type = env_params['agent_obs_type']
@@ -202,6 +203,69 @@ class CarlaEnv(gym.Env):
         self.route = self.scenario_manager.route_scenario.route  # the global route
         self.gps_route = self.scenario_manager.route_scenario.gps_route  # the global gps route
         self.global_route_waypoints = self.scenario_manager.route_scenario.global_route_waypoints
+
+    @staticmethod
+    def _weather_to_dict(weather):
+        if weather is None:
+            return None
+        weather_fields = [
+            'cloudiness',
+            'precipitation',
+            'precipitation_deposits',
+            'wind_intensity',
+            'sun_azimuth_angle',
+            'sun_altitude_angle',
+            'wetness',
+            'fog_distance',
+            'fog_density',
+        ]
+        return {field: float(getattr(weather, field, 0.0)) for field in weather_fields}
+
+    @staticmethod
+    def _infer_weather_label(weather_dict):
+        if not weather_dict:
+            return 'unknown'
+
+        precipitation = weather_dict.get('precipitation', 0.0)
+        wetness = weather_dict.get('wetness', 0.0)
+        cloudiness = weather_dict.get('cloudiness', 0.0)
+
+        if precipitation >= 20.0:
+            return 'rainy'
+        if wetness >= 20.0:
+            return 'wet'
+        if cloudiness >= 50.0:
+            return 'cloudy'
+        return 'clear'
+
+    @staticmethod
+    def _infer_time_of_day_label(weather_dict):
+        if not weather_dict:
+            return 'unknown'
+
+        sun_altitude = weather_dict.get('sun_altitude_angle', 70.0)
+        if sun_altitude <= 0.0:
+            return 'night'
+        if sun_altitude <= 25.0:
+            return 'sunset'
+        return 'noon'
+
+    def _get_scene_naming_fields(self):
+        parameters = self.config.parameters or {}
+        scenario_type_id = int(parameters.get('scenario_type_id', self.config.scenario_id))
+        scenario_subtype_id = int(parameters.get('scenario_subtype_id', 1))
+        scenario_number = int(parameters.get('scenario_number', self.config.data_id + 1))
+        map_name = self.world.get_map().name.split('/')[-1]
+        scene_name = (
+            f"{map_name}_type{scenario_type_id:03d}_"
+            f"subtype{scenario_subtype_id:04d}_scenario{scenario_number:05d}"
+        )
+        return {
+            'scene_name': scene_name,
+            'scenario_type_id': scenario_type_id,
+            'scenario_subtype_id': scenario_subtype_id,
+            'scenario_number': scenario_number,
+        }
 
     def _run_scenario(self):
         self.scenario_manager.run_scenario()  # init the background vehicle
@@ -327,7 +391,7 @@ class CarlaEnv(gym.Env):
             return
 
         actors_meta = {}
-        for role_name in self.camera_actor_roles:
+        for role_name in self.metadata_actor_roles:
             actor = self._get_camera_target_actor(role_name)
             if actor is not None:
                 actors_meta[role_name] = {
@@ -335,6 +399,8 @@ class CarlaEnv(gym.Env):
                     'type_id': actor.type_id
                 }
 
+        weather_dict = self._weather_to_dict(self.world.get_weather())
+        scene_naming = self._get_scene_naming_fields()
         metadata = {
             'scenario_id': self.config.scenario_id,
             'data_id': self.config.data_id,
@@ -342,8 +408,29 @@ class CarlaEnv(gym.Env):
             'camera_fps': self.camera_fps,
             'views': list(self.camera_view_transforms.keys()),
             'actors': actors_meta,
-            'parameters': self.config.parameters
+            'parameters': self.config.parameters,
+            'weather': weather_dict,
+            'weather_label': self._infer_weather_label(weather_dict),
+            'time_of_day_label': self._infer_time_of_day_label(weather_dict),
+            'scenario_type_id': scene_naming['scenario_type_id'],
+            'scenario_subtype_id': scene_naming['scenario_subtype_id'],
+            'scenario_number': scene_naming['scenario_number'],
+            'scene_name': scene_naming['scene_name'],
+            'accident_type': 'pending',
         }
+        with open(meta_path, 'w', encoding='utf-8') as meta_file:
+            json.dump(metadata, meta_file, indent=2)
+
+    def _update_scene_metadata_result(self, base_dir):
+        meta_path = os.path.join(base_dir, 'meta.json')
+        if not os.path.exists(meta_path):
+            return
+
+        with open(meta_path, 'r', encoding='utf-8') as meta_file:
+            metadata = json.load(meta_file)
+
+        metadata['accident_type'] = 'A' if self.ego_collide else 'normal'
+
         with open(meta_path, 'w', encoding='utf-8') as meta_file:
             json.dump(metadata, meta_file, indent=2)
 
@@ -376,6 +463,9 @@ class CarlaEnv(gym.Env):
     def reset(self, config, env_id):
         self.config = config
         self.env_id = env_id
+
+        if getattr(config, 'weather', None) is not None:
+            self.world.set_weather(config.weather)
 
         self._create_sensors()
         # create RouteScenario, scenario manager, ego_vehicle etc.
@@ -831,6 +921,7 @@ class CarlaEnv(gym.Env):
             f"data_{self.config.data_id:04d}"
         )
         os.makedirs(base_dir, exist_ok=True)
+        self._update_scene_metadata_result(base_dir)
         result_path = os.path.join(base_dir, 'scene_result.json')
         final_record = self.scenario_manager.running_record[-1] if self.scenario_manager.running_record else {}
         result = {

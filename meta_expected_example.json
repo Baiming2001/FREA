@@ -1,0 +1,55 @@
+{
+  "scenario_id": 3,
+  "data_id": 0,
+  "map": "Town03",
+  "camera_fps": 10,
+  "views": [
+    "front",
+    "front_left",
+    "front_right"
+  ],
+  "actors": {
+    "ego": {
+      "id": 109,
+      "type_id": "vehicle.lincoln.mkz_2017"
+    },
+    "leading": {
+      "id": 112,
+      "type_id": "vehicle.tesla.model3"
+    },
+    "other": {
+      "id": 113,
+      "type_id": "vehicle.audi.tt"
+    }
+  },
+  "parameters": {
+    "scenario_type_id": 3,
+    "scenario_subtype_id": 1,
+    "leading_distance_m": 18.0,
+    "other_distance_back_m": 10.0,
+    "other_lane_side": "left",
+    "leading_target_speed_mps": 7.0,
+    "other_target_speed_mps": 7.0,
+    "leading_brake_after_seconds": 6.0,
+    "leading_brake_duration_seconds": 3.0,
+    "leading_post_brake_speed_mps": 0.0
+  },
+  "weather": {
+    "cloudiness": 0.0,
+    "precipitation": 0.0,
+    "precipitation_deposits": 0.0,
+    "wind_intensity": 0.0,
+    "sun_azimuth_angle": 0.0,
+    "sun_altitude_angle": 70.0,
+    "wetness": 0.0,
+    "fog_distance": 0.0,
+    "fog_density": 0.0
+  },
+  "weather_label": "clear",
+  "time_of_day_label": "noon",
+  "scenario_type_id": 3,
+  "scenario_subtype_id": 1,
+  "scenario_number": 1,
+  "scene_name": "Town03_type003_subtype0001_scenario00001",
+  "accident_type": "A"
+}
