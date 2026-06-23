@@ -54,6 +54,7 @@ class CarlaRunner:
         self.save_camera_frames = scenario_config['save_camera_frames']
         self.camera_only = scenario_config.get('camera_only', False)
         self.progress_interval = scenario_config.get('progress_interval', 20)
+        self.draw_debug_overlays = scenario_config.get('draw_debug_overlays', False)
 
         self.eval_mode = scenario_config['eval_mode']
         self.viz_route = scenario_config['viz_route']
@@ -92,6 +93,7 @@ class CarlaRunner:
             'output_dir': self.output_dir,
             'camera_only': self.camera_only,
             'progress_interval': self.progress_interval,
+            'draw_debug_overlays': self.draw_debug_overlays,
             'signalized_junction': False,  # whether the signal controls the junction
             'warm_up_steps': scenario_config.get('warm_up_steps', 4),  # number of ticks after spawning the vehicles
             'disable_lidar': True,  # show bird-eye view lidar or not
@@ -171,6 +173,8 @@ class CarlaRunner:
                 self.logger.log('>> Evaluation Mode, rendering result', 'yellow')
                 if self.camera_only:
                     self.logger.log('>> Camera-only mode: skip pygame/birdeye rendering and only export camera frames', 'yellow')
+                if not self.draw_debug_overlays:
+                    self.logger.log('>> World debug overlays disabled: trajectory/route lines will not be drawn into camera views', 'yellow')
         else:
             raise NotImplementedError(f"Unsupported mode: {self.mode}.")
 

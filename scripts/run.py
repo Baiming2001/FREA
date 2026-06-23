@@ -39,6 +39,8 @@ if __name__ == '__main__':
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--threads', type=int, default=4)
     parser.add_argument('--device', type=str, default='cuda:0' if torch.cuda.is_available() else 'cpu')   
+    parser.add_argument('--data_id', type=int, default=None, help='run only one specific scenario data_id')
+    parser.add_argument('--town', type=str, default=None, help='run only scenarios in one town, e.g. Town03')
 
     parser.add_argument('--num_scenario', '-ns', type=int, default=2, help='num of scenarios we run in one episode')
     parser.add_argument('--save_video', action='store_true')
@@ -46,6 +48,7 @@ if __name__ == '__main__':
     parser.add_argument('--camera_fps', type=int, default=10)
     parser.add_argument('--camera_only', action='store_true')
     parser.add_argument('--progress_interval', type=int, default=20)
+    parser.add_argument('--draw_debug_overlays', action='store_true')
     parser.add_argument('--spectator', '-sp', action='store_true', default=False)
     parser.add_argument('--frame_skip', '-fs', type=int, default=1, help='skip of frame in each step')
     parser.add_argument('--port', type=int, default=2000, help='port to communicate with carla')

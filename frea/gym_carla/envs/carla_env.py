@@ -90,6 +90,7 @@ class CarlaEnv(gym.Env):
         self.camera_actor_ids = {}
         self.metadata_actor_roles = ['ego', 'leading', 'other']
         self.camera_actor_roles = ['ego', 'other']
+        self.draw_debug_overlays = env_params.get('draw_debug_overlays', False)
         self.search_radius = env_params['search_radius']
         self.agent_obs_type = env_params['agent_obs_type']
         self.agent_state_encoder = agent_state_encoder
@@ -547,7 +548,7 @@ class CarlaEnv(gym.Env):
 
     def visualize_actors(self):
         # visualize the past trajectory of all the actor on the map
-        if self.eval_mode == 'render':
+        if self.eval_mode == 'render' and self.draw_debug_overlays:
             draw_trajectory(self.world, self.ego_vehicle, self.time_step)
 
             # if the ego agent is learnable and need to viz the route, then draw the target waypoints

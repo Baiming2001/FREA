@@ -96,6 +96,9 @@ def scenario_parse(config, logger):
         if config['route_id'] is not None:
             logger.log('>> Selecting route_id: ' + str(config['route_id']))
             data_full = [item for item in data_full if item["route_id"] == config['route_id']]
+        if config.get('data_id') is not None:
+            logger.log('>> Selecting data_id: ' + str(config['data_id']))
+            data_full = [item for item in data_full if item["data_id"] == config['data_id']]
 
     logger.log(f'>> Loading {len(data_full)} data')
     data_full = [item for item in data_full if item["data_id"] not in [key for subdict in logger.eval_records.values() for key in subdict.keys()]]
@@ -122,6 +125,9 @@ def scenario_parse(config, logger):
         # parse the template directory from .yaml config of scenarios
         if 'texture_dir' in config.keys():
             parsed_config.texture_dir = config['texture_dir']
+
+        if config.get('town') is not None and parsed_config.town != config['town']:
+            continue
         
         # cluster config according to the town
         if parsed_config.town not in config_by_map:
