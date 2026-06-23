@@ -410,6 +410,7 @@ class CarlaEnv(gym.Env):
             'views': list(self.camera_view_transforms.keys()),
             'actors': actors_meta,
             'parameters': self.config.parameters,
+            'target_outcome': self.config.parameters.get('target_outcome') if self.config.parameters is not None else None,
             'weather': weather_dict,
             'weather_label': self._infer_weather_label(weather_dict),
             'time_of_day_label': self._infer_time_of_day_label(weather_dict),

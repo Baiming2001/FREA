@@ -49,6 +49,8 @@ class AdvBehaviorSingle(BasicScenario):
         self.special_actor_indices = {}
         self.scripted_parameters = {}
         self.script_step = 0
+        self.stop_hold_steps = 0
+        self.should_terminate = False
 
     def set_special_actors(self, special_actors, scripted_parameters=None):
         self.special_actors = special_actors or {}
@@ -58,6 +60,9 @@ class AdvBehaviorSingle(BasicScenario):
         self.scenario_operation.vehicle_controller = {}
         self.scenario_operation._init_vehicle_controller()
         self.special_actor_indices = {}
+        self.script_step = 0
+        self.stop_hold_steps = 0
+        self.should_terminate = False
         for index, (role_name, actor) in enumerate(self.special_actors.items()):
             if actor is not None:
                 self.special_actor_indices[role_name] = index
@@ -82,18 +87,25 @@ class AdvBehaviorSingle(BasicScenario):
 
         self.scenario_operation.drive_to_target_followlane(actor_index, next_waypoints[0].transform, target_speed)
 
+    def _get_speed_with_variation(self, base_speed, variation_amplitude):
+        variation = variation_amplitude * np.sin(self.script_step * 0.25)
+        return max(0.0, base_speed + variation)
+
     def _update_scripted_special_actors(self):
         if not self.special_actors:
             return
 
         leading_speed = self.scripted_parameters.get('leading_target_speed_mps', 7.0)
-        other_speed = self.scripted_parameters.get('other_target_speed_mps', 7.0)
-        brake_after_seconds = self.scripted_parameters.get('leading_brake_after_seconds', 6.0)
-        brake_duration_seconds = self.scripted_parameters.get('leading_brake_duration_seconds', 3.0)
+        other_base_speed = self.scripted_parameters.get('other_target_speed_mps', 7.0)
+        brake_after_seconds = self.scripted_parameters.get('leading_brake_after_seconds', 3.0)
+        brake_duration_seconds = self.scripted_parameters.get('leading_brake_duration_seconds', 2.0)
         post_brake_speed = self.scripted_parameters.get('leading_post_brake_speed_mps', 0.0)
+        other_speed_variation = self.scripted_parameters.get('other_speed_variation_mps', 0.3)
+        scene_end_after_stop_seconds = self.scripted_parameters.get('scene_end_after_stop_seconds', 1.0)
 
         brake_start_step = int(brake_after_seconds / self.fixed_delta_seconds)
         brake_end_step = brake_start_step + int(brake_duration_seconds / self.fixed_delta_seconds)
+        hold_steps_needed = max(1, int(scene_end_after_stop_seconds / self.fixed_delta_seconds))
 
         if self.special_actors.get('leading') is not None:
             if self.script_step < brake_start_step:
@@ -106,9 +118,30 @@ class AdvBehaviorSingle(BasicScenario):
                 self.scenario_operation.brake(self.special_actors['leading'])
 
         if self.special_actors.get('other') is not None:
-            self._follow_lane_with_pid('other', other_speed)
+            ego_speed = calculate_abs_velocity(CarlaDataProvider.get_velocity(self.ego_vehicle))
+            target_other_reference_speed = ego_speed if ego_speed > 0.5 else other_base_speed
+            target_other_speed = self._get_speed_with_variation(
+                target_other_reference_speed,
+                other_speed_variation
+            )
+            self._follow_lane_with_pid('other', target_other_speed)
+
+        if self.script_step >= brake_end_step:
+            leading_actor = self.special_actors.get('leading')
+            leading_speed_now = calculate_abs_velocity(CarlaDataProvider.get_velocity(leading_actor)) if leading_actor is not None else 0.0
+            ego_speed_now = calculate_abs_velocity(CarlaDataProvider.get_velocity(self.ego_vehicle))
+            if leading_speed_now < 0.3 and ego_speed_now < 0.5:
+                self.stop_hold_steps += 1
+            else:
+                self.stop_hold_steps = 0
+            self.should_terminate = self.stop_hold_steps >= hold_steps_needed
+        else:
+            self.should_terminate = False
 
         self.script_step += 1
+
+    def should_terminate_episode(self):
+        return getattr(self, 'should_terminate', False)
 
     def convert_actions(self, scenario_actions):
         acc = scenario_actions[0]  # continuous action: acc

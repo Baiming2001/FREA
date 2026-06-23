@@ -7,14 +7,17 @@
         "parameters": {
             "scenario_type_id": 3,
             "scenario_subtype_id": 1,
-            "leading_distance_m": 18.0,
-            "other_distance_back_m": 10.0,
+            "target_outcome": "near_miss",
+            "leading_distance_m": 12.0,
+            "other_distance_back_m": 8.0,
             "other_lane_side": "left",
             "leading_target_speed_mps": 7.0,
             "other_target_speed_mps": 7.0,
-            "leading_brake_after_seconds": 6.0,
-            "leading_brake_duration_seconds": 3.0,
-            "leading_post_brake_speed_mps": 0.0
+            "leading_brake_after_seconds": 3.0,
+            "leading_brake_duration_seconds": 2.0,
+            "leading_post_brake_speed_mps": 0.0,
+            "other_speed_variation_mps": 0.3,
+            "scene_end_after_stop_seconds": 1.0
         }
     },
     {
@@ -25,14 +28,17 @@
         "parameters": {
             "scenario_type_id": 3,
             "scenario_subtype_id": 1,
-            "leading_distance_m": 18.0,
-            "other_distance_back_m": 10.0,
+            "target_outcome": "near_miss",
+            "leading_distance_m": 12.0,
+            "other_distance_back_m": 8.0,
             "other_lane_side": "left",
             "leading_target_speed_mps": 7.0,
             "other_target_speed_mps": 7.0,
-            "leading_brake_after_seconds": 6.0,
-            "leading_brake_duration_seconds": 3.0,
-            "leading_post_brake_speed_mps": 0.0
+            "leading_brake_after_seconds": 3.0,
+            "leading_brake_duration_seconds": 2.0,
+            "leading_post_brake_speed_mps": 0.0,
+            "other_speed_variation_mps": 0.3,
+            "scene_end_after_stop_seconds": 1.0
         }
     },
     {
@@ -43,14 +49,17 @@
         "parameters": {
             "scenario_type_id": 3,
             "scenario_subtype_id": 1,
-            "leading_distance_m": 18.0,
-            "other_distance_back_m": 10.0,
+            "target_outcome": "near_miss",
+            "leading_distance_m": 12.0,
+            "other_distance_back_m": 8.0,
             "other_lane_side": "left",
             "leading_target_speed_mps": 7.0,
             "other_target_speed_mps": 7.0,
-            "leading_brake_after_seconds": 6.0,
-            "leading_brake_duration_seconds": 3.0,
-            "leading_post_brake_speed_mps": 0.0
+            "leading_brake_after_seconds": 3.0,
+            "leading_brake_duration_seconds": 2.0,
+            "leading_post_brake_speed_mps": 0.0,
+            "other_speed_variation_mps": 0.3,
+            "scene_end_after_stop_seconds": 1.0
         }
     }
 ]

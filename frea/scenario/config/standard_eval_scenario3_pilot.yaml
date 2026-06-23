@@ -19,6 +19,6 @@ train_episode:
   Town04: 2000
   Town05: 2000
 gamma: 0.99
-max_episode_step: 200
+max_episode_step: 100
 warm_up_steps: 2
 traffic_intensity: 0.2

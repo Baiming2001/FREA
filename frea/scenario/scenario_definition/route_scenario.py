@@ -71,16 +71,45 @@ class RouteScenario():
         parameters = copy.deepcopy(self.config.parameters) if self.config.parameters is not None else {}
         if self.config.scenario_id == 3:
             scenario3_defaults = {
-                'leading_distance_m': 18.0,
-                'other_distance_back_m': 10.0,
+                'target_outcome': 'near_miss',
+                'leading_distance_m': 12.0,
+                'other_distance_back_m': 8.0,
                 'other_lane_side': 'left',
                 'leading_target_speed_mps': 7.0,
                 'other_target_speed_mps': 7.0,
-                'leading_brake_after_seconds': 6.0,
-                'leading_brake_duration_seconds': 3.0,
-                'leading_post_brake_speed_mps': 0.0
+                'leading_brake_after_seconds': 3.0,
+                'leading_brake_duration_seconds': 2.0,
+                'leading_post_brake_speed_mps': 0.0,
+                'other_speed_variation_mps': 0.3,
+                'scene_end_after_stop_seconds': 1.0
             }
+            outcome_profiles = {
+                'collision': {
+                    'leading_distance_m': 8.0,
+                    'leading_brake_after_seconds': 2.0,
+                    'leading_brake_duration_seconds': 1.5,
+                    'leading_post_brake_speed_mps': 0.0,
+                    'other_speed_variation_mps': 0.2,
+                },
+                'near_miss': {
+                    'leading_distance_m': 14.0,
+                    'leading_brake_after_seconds': 3.0,
+                    'leading_brake_duration_seconds': 2.0,
+                    'leading_post_brake_speed_mps': 1.5,
+                    'other_speed_variation_mps': 0.3,
+                },
+                'normal': {
+                    'leading_distance_m': 14.0,
+                    'leading_brake_after_seconds': 3.0,
+                    'leading_brake_duration_seconds': 2.0,
+                    'leading_post_brake_speed_mps': 1.5,
+                    'other_speed_variation_mps': 0.3,
+                },
+            }
+            target_outcome = str(parameters.get('target_outcome', scenario3_defaults['target_outcome'])).lower()
+            scenario3_defaults.update(outcome_profiles.get(target_outcome, {}))
             scenario3_defaults.update(parameters)
+            scenario3_defaults['target_outcome'] = target_outcome
             return scenario3_defaults
         return parameters
 
@@ -282,6 +311,10 @@ class RouteScenario():
             ego_stop = True
             ego_truncated = True
             self.logger.log('>> Scenario stops due to max steps', color='yellow')
+
+        if self.config.scenario_id == 3 and self.scenario_instance.should_terminate_episode():
+            ego_stop = True
+            self.logger.log('>> Scenario stops because leading and ego vehicles have both settled after braking', color='yellow')
 
         if running_status['current_game_time'] >= self.timeout:
             ego_stop = True
