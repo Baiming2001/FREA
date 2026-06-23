@@ -530,6 +530,8 @@ class CarlaEnv(gym.Env):
         for _ in range(self.warm_up_steps):
             self.world.tick()
 
+        self._save_front_camera_frame()
+
         return self._get_obs(), self._get_info(next_info=False, reset=True)
 
     def _attach_sensor(self):

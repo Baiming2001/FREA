@@ -53,9 +53,12 @@ class RouteScenario():
         self.mode = mode
         self.timeout = 60
         self.ego_max_driven_distance = 200
+        self.fixed_delta_seconds = env_params.get('fixed_delta_seconds', 0.1)
         self.traffic_intensity = env_params['traffic_intensity']
         self.search_radius = env_params['search_radius']
         self.goal_point_radius = env_params['goal_point_radius']
+        self.post_collision_hold_steps = max(1, int(0.5 / self.fixed_delta_seconds))
+        self.post_collision_steps = 0
 
         # create the route and ego's position (the start point of the route)
         self.route, self.ego_vehicle, self.gps_route = self._update_route_and_ego(timeout=self.timeout)
@@ -298,10 +301,17 @@ class RouteScenario():
         ego_stop = False
         ego_truncated = False
         ego_collision = False
+        collision_actor_id = None
         # collision with other objects
         if running_status['collision'][0] == Status.FAILURE:
             ego_collision = True
-            if running_status['collision'][1] is not None and running_status['collision'][1] not in CarlaDataProvider.get_CBVs_by_ego(self.ego_vehicle):
+            collision_actor_id = running_status['collision'][1]
+            special_actor_ids = {actor.id for actor in self.special_actors.values() if actor is not None}
+            if (
+                collision_actor_id is not None
+                and collision_actor_id not in CarlaDataProvider.get_CBVs_by_ego(self.ego_vehicle)
+                and collision_actor_id not in special_actor_ids
+            ):
                 ego_stop = True
                 self.logger.log(f'>> Scenario stops due to collision with normal object', color='yellow')
 
@@ -326,6 +336,14 @@ class RouteScenario():
             ego_stop = True
             ego_truncated = True
             self.logger.log('>> Scenario stops due to max steps', color='yellow')
+
+        if self.config.scenario_id == 3 and ego_collision:
+            self.post_collision_steps += 1
+            if self.post_collision_steps >= self.post_collision_hold_steps:
+                ego_stop = True
+                self.logger.log('>> Scenario stops 0.5s after collision', color='yellow')
+        elif self.config.scenario_id == 3:
+            self.post_collision_steps = 0
 
         if self.config.scenario_id == 3 and self.scenario_instance.should_terminate_episode():
             ego_stop = True

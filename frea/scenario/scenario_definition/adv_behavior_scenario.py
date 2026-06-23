@@ -120,7 +120,8 @@ class AdvBehaviorSingle(BasicScenario):
 
         if self.special_actors.get('other') is not None:
             ego_speed = calculate_abs_velocity(CarlaDataProvider.get_velocity(self.ego_vehicle))
-            target_other_reference_speed = ego_speed if ego_speed > 0.5 else other_base_speed
+            # Keep the adjacent vehicle from lagging behind the ego during cruising.
+            target_other_reference_speed = max(other_base_speed, ego_speed + 0.5)
             target_other_speed = self._get_speed_with_variation(
                 target_other_reference_speed,
                 other_speed_variation
