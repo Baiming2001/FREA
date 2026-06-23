@@ -81,7 +81,9 @@ class RouteScenario():
                 'leading_brake_duration_seconds': 2.0,
                 'leading_post_brake_speed_mps': 0.0,
                 'other_speed_variation_mps': 0.3,
-                'scene_end_after_stop_seconds': 1.0
+                'scene_end_after_stop_seconds': 1.0,
+                'ego_reaction_delay_seconds': 0.0,
+                'ego_min_throttle_during_delay': 0.0,
             }
             outcome_profiles = {
                 'collision': {
@@ -92,6 +94,8 @@ class RouteScenario():
                     'leading_brake_duration_seconds': 1.0,
                     'leading_post_brake_speed_mps': 0.0,
                     'other_speed_variation_mps': 0.15,
+                    'ego_reaction_delay_seconds': 1.2,
+                    'ego_min_throttle_during_delay': 0.35,
                 },
                 'near_miss': {
                     'leading_distance_m': 14.0,
@@ -101,6 +105,8 @@ class RouteScenario():
                     'leading_brake_duration_seconds': 2.0,
                     'leading_post_brake_speed_mps': 1.5,
                     'other_speed_variation_mps': 0.3,
+                    'ego_reaction_delay_seconds': 0.0,
+                    'ego_min_throttle_during_delay': 0.0,
                 },
                 'normal': {
                     'leading_distance_m': 14.0,
@@ -110,6 +116,8 @@ class RouteScenario():
                     'leading_brake_duration_seconds': 2.0,
                     'leading_post_brake_speed_mps': 1.5,
                     'other_speed_variation_mps': 0.3,
+                    'ego_reaction_delay_seconds': 0.0,
+                    'ego_min_throttle_during_delay': 0.0,
                 },
             }
             target_outcome = str(parameters.get('target_outcome', scenario3_defaults['target_outcome'])).lower()
