@@ -75,8 +75,8 @@ class RouteScenario():
                 'leading_distance_m': 12.0,
                 'other_distance_back_m': 8.0,
                 'other_lane_side': 'left',
-                'leading_target_speed_mps': 7.0,
-                'other_target_speed_mps': 7.0,
+                'leading_target_speed_mps': 10.0,
+                'other_target_speed_mps': 10.0,
                 'leading_brake_after_seconds': 3.0,
                 'leading_brake_duration_seconds': 2.0,
                 'leading_post_brake_speed_mps': 0.0,
@@ -85,14 +85,18 @@ class RouteScenario():
             }
             outcome_profiles = {
                 'collision': {
-                    'leading_distance_m': 8.0,
-                    'leading_brake_after_seconds': 2.0,
-                    'leading_brake_duration_seconds': 1.5,
+                    'leading_distance_m': 6.0,
+                    'leading_target_speed_mps': 12.0,
+                    'other_target_speed_mps': 11.0,
+                    'leading_brake_after_seconds': 1.5,
+                    'leading_brake_duration_seconds': 1.0,
                     'leading_post_brake_speed_mps': 0.0,
-                    'other_speed_variation_mps': 0.2,
+                    'other_speed_variation_mps': 0.15,
                 },
                 'near_miss': {
                     'leading_distance_m': 14.0,
+                    'leading_target_speed_mps': 10.0,
+                    'other_target_speed_mps': 10.0,
                     'leading_brake_after_seconds': 3.0,
                     'leading_brake_duration_seconds': 2.0,
                     'leading_post_brake_speed_mps': 1.5,
@@ -100,6 +104,8 @@ class RouteScenario():
                 },
                 'normal': {
                     'leading_distance_m': 14.0,
+                    'leading_target_speed_mps': 10.0,
+                    'other_target_speed_mps': 10.0,
                     'leading_brake_after_seconds': 3.0,
                     'leading_brake_duration_seconds': 2.0,
                     'leading_post_brake_speed_mps': 1.5,
