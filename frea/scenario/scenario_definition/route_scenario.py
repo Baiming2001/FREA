@@ -90,7 +90,7 @@ class RouteScenario():
                     'leading_distance_m': 6.0,
                     'leading_target_speed_mps': 12.0,
                     'other_target_speed_mps': 11.0,
-                    'leading_brake_after_seconds': 1.5,
+                    'leading_brake_after_seconds': 6.0,
                     'leading_brake_duration_seconds': 1.0,
                     'leading_post_brake_speed_mps': 0.0,
                     'other_speed_variation_mps': 0.15,
@@ -124,6 +124,7 @@ class RouteScenario():
             scenario3_defaults.update(outcome_profiles.get(target_outcome, {}))
             scenario3_defaults.update(parameters)
             scenario3_defaults['target_outcome'] = target_outcome
+            self.config.parameters = copy.deepcopy(scenario3_defaults)
             return scenario3_defaults
         return parameters
 
