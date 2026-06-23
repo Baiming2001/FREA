@@ -11,6 +11,7 @@
 import carla
 
 import numpy as np
+from frea.gym_carla.envs.utils import calculate_abs_velocity
 from frea.scenario.tools.scenario_operation import ScenarioOperation
 from frea.scenario.scenario_manager.carla_data_provider import CarlaDataProvider
 from frea.scenario.scenario_definition.basic_scenario import BasicScenario
