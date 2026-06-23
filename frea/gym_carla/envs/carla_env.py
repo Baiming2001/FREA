@@ -592,22 +592,22 @@ class CarlaEnv(gym.Env):
                 update_goal_CBV_dis(self.ego_vehicle, self.goal_waypoint)
 
                 # Calculate acceleration and steering
-                    if not self.auto_ego:
-                        if not self.ego_agent_learnable:
-                            # the rule-based action
-                            throttle = ego_action[0]
-                            steer = ego_action[1]
-                            brake = ego_action[2]
-                            throttle, steer, brake = self._apply_collision_target_ego_override(throttle, steer, brake)
-                            act = carla.VehicleControl(throttle=float(throttle), steer=float(steer), brake=float(brake))
-                        else:
-                            # the learnable agent action
-                            ego_action = process_ego_action(ego_action, acc_range=self.acc_range, steering_range=self.steering_range)
-                            ego_action[0], ego_action[1], ego_action[2] = self._apply_collision_target_ego_override(
-                                ego_action[0], ego_action[1], ego_action[2]
-                            )
-                            # apply ego control
-                            act = carla.VehicleControl(throttle=float(ego_action[0]), steer=float(ego_action[1]), brake=float(ego_action[2]))
+                if not self.auto_ego:
+                    if not self.ego_agent_learnable:
+                        # the rule-based action
+                        throttle = ego_action[0]
+                        steer = ego_action[1]
+                        brake = ego_action[2]
+                        throttle, steer, brake = self._apply_collision_target_ego_override(throttle, steer, brake)
+                        act = carla.VehicleControl(throttle=float(throttle), steer=float(steer), brake=float(brake))
+                    else:
+                        # the learnable agent action
+                        ego_action = process_ego_action(ego_action, acc_range=self.acc_range, steering_range=self.steering_range)
+                        ego_action[0], ego_action[1], ego_action[2] = self._apply_collision_target_ego_override(
+                            ego_action[0], ego_action[1], ego_action[2]
+                        )
+                        # apply ego control
+                        act = carla.VehicleControl(throttle=float(ego_action[0]), steer=float(ego_action[1]), brake=float(ego_action[2]))
                     self.ego_vehicle.apply_control(act)  # apply action of the ego vehicle on the next tick
 
             else:
