@@ -203,6 +203,30 @@ class RouteScenario():
         longitudinal_projection = relative_x * forward_vector.x + relative_y * forward_vector.y
         return longitudinal_projection <= -abs(min_back_distance)
 
+    def _project_to_rear_adjacent_waypoint(self, reference_waypoint, lane_side, back_distance):
+        if reference_waypoint is None:
+            return None
+
+        reference_transform = reference_waypoint.transform
+        reference_location = reference_transform.location
+        forward_vector = reference_transform.get_forward_vector()
+        right_vector = reference_transform.get_right_vector()
+
+        lane_width = getattr(reference_waypoint, 'lane_width', 3.5) or 3.5
+        lateral_sign = -1.0 if lane_side == 'left' else 1.0
+        lateral_offset = lane_width * lateral_sign
+
+        target_location = carla.Location(
+            x=reference_location.x - forward_vector.x * back_distance + right_vector.x * lateral_offset,
+            y=reference_location.y - forward_vector.y * back_distance + right_vector.y * lateral_offset,
+            z=reference_location.z
+        )
+        return self.world.get_map().get_waypoint(
+            target_location,
+            project_to_road=True,
+            lane_type=carla.LaneType.Driving
+        )
+
     def _spawn_special_actor(self, role_name, transform, vehicle_model):
         actor = CarlaDataProvider.request_new_actor(
             vehicle_model,
@@ -242,7 +266,15 @@ class RouteScenario():
                     other_waypoint = fallback_waypoint
                     break
             else:
-                raise RuntimeError('Failed to place Scenario 3 other vehicle behind ego vehicle')
+                projected_waypoint = self._project_to_rear_adjacent_waypoint(
+                    ego_start_waypoint,
+                    scenario_params['other_lane_side'],
+                    scenario_params['other_distance_back_m']
+                )
+                if projected_waypoint is not None and self._is_waypoint_behind_reference(ego_start_waypoint, projected_waypoint):
+                    other_waypoint = projected_waypoint
+                else:
+                    raise RuntimeError('Failed to place Scenario 3 other vehicle behind ego vehicle')
 
         self._spawn_special_actor('leading', leading_waypoint.transform, 'vehicle.tesla.model3')
         self._spawn_special_actor('other', other_waypoint.transform, 'vehicle.audi.tt')
