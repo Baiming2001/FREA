@@ -141,10 +141,16 @@ class CarlaEnv(gym.Env):
         brake_after_seconds = float(parameters.get('leading_brake_after_seconds', 0.0))
         ego_reaction_delay_seconds = float(parameters.get('ego_reaction_delay_seconds', 0.0))
         ego_min_throttle_during_delay = float(parameters.get('ego_min_throttle_during_delay', 0.0))
+        ego_min_throttle_before_brake = float(parameters.get('ego_min_throttle_before_brake', 0.0))
+
+        brake_start_step = int(brake_after_seconds / self.fixed_delta_seconds)
+        if self.time_step < brake_start_step and ego_min_throttle_before_brake > 0.0:
+            throttle = max(float(throttle), ego_min_throttle_before_brake)
+            brake = 0.0
+
         if ego_reaction_delay_seconds <= 0.0:
             return throttle, steer, brake
 
-        brake_start_step = int(brake_after_seconds / self.fixed_delta_seconds)
         reaction_resume_step = brake_start_step + int(ego_reaction_delay_seconds / self.fixed_delta_seconds)
         if brake_start_step <= self.time_step < reaction_resume_step:
             throttle = max(float(throttle), ego_min_throttle_during_delay)
