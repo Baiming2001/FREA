@@ -154,6 +154,55 @@ class RouteScenario():
             return None
         return candidate
 
+    def _find_nearby_adjacent_lane(self, waypoint, lane_side, search_distances=None):
+        if waypoint is None:
+            return None, None
+
+        if search_distances is None:
+            search_distances = [0.0, 5.0, 10.0, 15.0, 20.0]
+
+        for distance in search_distances:
+            candidate_waypoints = []
+            if distance == 0.0:
+                candidate_waypoints.append(waypoint)
+            else:
+                candidate_waypoints.append(self._shift_waypoint(waypoint, distance, forward=True))
+                candidate_waypoints.append(self._shift_waypoint(waypoint, distance, forward=False))
+
+            for candidate_waypoint in candidate_waypoints:
+                adjacent_lane = self._get_adjacent_driving_lane(candidate_waypoint, lane_side)
+                if adjacent_lane is not None:
+                    return adjacent_lane, candidate_waypoint
+
+        return None, None
+
+    def _find_rear_adjacent_lane(self, waypoint, lane_side, search_distances=None):
+        if waypoint is None:
+            return None, None
+
+        if search_distances is None:
+            search_distances = [0.0, 5.0, 10.0, 15.0, 20.0, 30.0]
+
+        for distance in search_distances:
+            candidate_waypoint = waypoint if distance == 0.0 else self._shift_waypoint(waypoint, distance, forward=False)
+            adjacent_lane = self._get_adjacent_driving_lane(candidate_waypoint, lane_side)
+            if adjacent_lane is not None:
+                return adjacent_lane, candidate_waypoint
+
+        return None, None
+
+    def _is_waypoint_behind_reference(self, reference_waypoint, candidate_waypoint, min_back_distance=1.0):
+        if reference_waypoint is None or candidate_waypoint is None:
+            return False
+
+        reference_location = reference_waypoint.transform.location
+        candidate_location = candidate_waypoint.transform.location
+        forward_vector = reference_waypoint.transform.get_forward_vector()
+        relative_x = candidate_location.x - reference_location.x
+        relative_y = candidate_location.y - reference_location.y
+        longitudinal_projection = relative_x * forward_vector.x + relative_y * forward_vector.y
+        return longitudinal_projection <= -abs(min_back_distance)
+
     def _spawn_special_actor(self, role_name, transform, vehicle_model):
         actor = CarlaDataProvider.request_new_actor(
             vehicle_model,
@@ -178,10 +227,22 @@ class RouteScenario():
             raise RuntimeError('Failed to get ego start waypoint for Scenario 3')
 
         leading_waypoint = self._shift_waypoint(ego_start_waypoint, scenario_params['leading_distance_m'], forward=True)
-        adjacent_lane = self._get_adjacent_driving_lane(ego_start_waypoint, scenario_params['other_lane_side'])
+        adjacent_lane, _ = self._find_rear_adjacent_lane(
+            ego_start_waypoint,
+            scenario_params['other_lane_side']
+        )
         if adjacent_lane is None:
             raise RuntimeError('Failed to find an adjacent driving lane for Scenario 3 other vehicle')
         other_waypoint = self._shift_waypoint(adjacent_lane, scenario_params['other_distance_back_m'], forward=False)
+        if not self._is_waypoint_behind_reference(ego_start_waypoint, other_waypoint):
+            fallback_distances = [scenario_params['other_distance_back_m'] + extra for extra in (5.0, 10.0, 15.0, 20.0)]
+            for fallback_distance in fallback_distances:
+                fallback_waypoint = self._shift_waypoint(adjacent_lane, fallback_distance, forward=False)
+                if self._is_waypoint_behind_reference(ego_start_waypoint, fallback_waypoint):
+                    other_waypoint = fallback_waypoint
+                    break
+            else:
+                raise RuntimeError('Failed to place Scenario 3 other vehicle behind ego vehicle')
 
         self._spawn_special_actor('leading', leading_waypoint.transform, 'vehicle.tesla.model3')
         self._spawn_special_actor('other', other_waypoint.transform, 'vehicle.audi.tt')
