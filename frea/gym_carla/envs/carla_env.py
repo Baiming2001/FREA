@@ -84,6 +84,7 @@ class CarlaEnv(gym.Env):
         self.route = None
         self.CBVs_collision = {}
         self.ego_collide = False
+        self.scene_had_ego_collision = False
         self.front_camera_frame_idx = 0
         self.actor_camera_sensors = {}
         self.actor_camera_imgs = {}
@@ -274,6 +275,89 @@ class CarlaEnv(gym.Env):
             return 'sunset'
         return 'noon'
 
+    @staticmethod
+    def _clone_weather(weather):
+        cloned = carla.WeatherParameters()
+        if weather is None:
+            return cloned
+
+        for field in [
+            'cloudiness',
+            'precipitation',
+            'precipitation_deposits',
+            'wind_intensity',
+            'sun_azimuth_angle',
+            'sun_altitude_angle',
+            'wetness',
+            'fog_distance',
+            'fog_density',
+        ]:
+            if hasattr(weather, field):
+                setattr(cloned, field, float(getattr(weather, field)))
+        return cloned
+
+    def _override_weather_from_labels(self, weather, parameters):
+        if parameters is None:
+            return weather
+
+        weather_label = parameters.get('weather_label')
+        time_of_day_label = parameters.get('time_of_day_label')
+        if weather_label is None and time_of_day_label is None:
+            return weather
+
+        overridden = self._clone_weather(weather)
+        weather_presets = {
+            'clear': {
+                'cloudiness': 10.0,
+                'precipitation': 0.0,
+                'precipitation_deposits': 0.0,
+                'wetness': 0.0,
+                'fog_density': 0.0,
+                'fog_distance': 120.0,
+                'wind_intensity': 5.0,
+            },
+            'rainy': {
+                'cloudiness': 85.0,
+                'precipitation': 75.0,
+                'precipitation_deposits': 60.0,
+                'wetness': 70.0,
+                'fog_density': 20.0,
+                'fog_distance': 45.0,
+                'wind_intensity': 35.0,
+            },
+            'cloudy': {
+                'cloudiness': 85.0,
+                'precipitation': 0.0,
+                'precipitation_deposits': 0.0,
+                'wetness': 10.0,
+                'fog_density': 5.0,
+                'fog_distance': 90.0,
+                'wind_intensity': 10.0,
+            },
+            'wet': {
+                'cloudiness': 45.0,
+                'precipitation': 0.0,
+                'precipitation_deposits': 0.0,
+                'wetness': 80.0,
+                'fog_density': 0.0,
+                'fog_distance': 100.0,
+                'wind_intensity': 8.0,
+            },
+        }
+        time_presets = {
+            'noon': {'sun_altitude_angle': 70.0},
+            'sunset': {'sun_altitude_angle': 15.0},
+            'night': {'sun_altitude_angle': -20.0},
+        }
+
+        if weather_label is not None:
+            for field, value in weather_presets.get(str(weather_label).lower(), {}).items():
+                setattr(overridden, field, value)
+        if time_of_day_label is not None:
+            for field, value in time_presets.get(str(time_of_day_label).lower(), {}).items():
+                setattr(overridden, field, value)
+        return overridden
+
     def _get_scene_naming_fields(self):
         parameters = self.config.parameters or {}
         scenario_type_id = int(parameters.get('scenario_type_id', self.config.scenario_id))
@@ -454,7 +538,7 @@ class CarlaEnv(gym.Env):
         with open(meta_path, 'r', encoding='utf-8') as meta_file:
             metadata = json.load(meta_file)
 
-        metadata['accident_type'] = 'A' if self.ego_collide else 'normal'
+        metadata['accident_type'] = 'A' if self.scene_had_ego_collision else 'normal'
 
         with open(meta_path, 'w', encoding='utf-8') as meta_file:
             json.dump(metadata, meta_file, indent=2)
@@ -490,6 +574,7 @@ class CarlaEnv(gym.Env):
         self.env_id = env_id
 
         if getattr(config, 'weather', None) is not None:
+            config.weather = self._override_weather_from_labels(config.weather, getattr(config, 'parameters', None))
             self.world.set_weather(config.weather)
 
         self._create_sensors()
@@ -934,6 +1019,9 @@ class CarlaEnv(gym.Env):
                     self.ego_collide = True
                     break
 
+        if self.ego_collide:
+            self.scene_had_ego_collision = True
+
         self.logger.log(f'>> Ego collide', color='yellow') if self.ego_collide else None
 
     def _terminal(self):
@@ -956,7 +1044,7 @@ class CarlaEnv(gym.Env):
         result_path = os.path.join(base_dir, 'scene_result.json')
         final_record = self.scenario_manager.running_record[-1] if self.scenario_manager.running_record else {}
         result = {
-            'ego_collision': self.ego_collide,
+            'ego_collision': self.scene_had_ego_collision,
             'time_steps': self.time_step,
             'route_completion': final_record.get('route_complete'),
             'current_game_time': final_record.get('current_game_time')
@@ -1039,6 +1127,7 @@ class CarlaEnv(gym.Env):
         self.waypoints = None
         self.goal_waypoint = None
         self.ego_collide = False
+        self.scene_had_ego_collision = False
         self.CBVs_collision = {}
         self.front_camera_frame_idx = 0
         self.actor_camera_sensors = {}
