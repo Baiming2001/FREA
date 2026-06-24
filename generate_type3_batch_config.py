@@ -112,11 +112,15 @@ def generate_entries(args, routes_by_town):
     rng = random.Random(args.seed)
     entries = []
     data_id = 0
+    available_towns = sorted(routes_by_town.keys())
 
     for town in args.towns:
         route_ids = routes_by_town.get(town, [])
         if not route_ids:
-            raise ValueError(f"No routes discovered for {town} under scenario_{args.scenario_id:02d}_routes")
+            raise ValueError(
+                f"No routes discovered for {town} under scenario_{args.scenario_id:02d}_routes. "
+                f"Available towns: {available_towns}"
+            )
 
         shuffled_routes = route_ids[:]
         rng.shuffle(shuffled_routes)

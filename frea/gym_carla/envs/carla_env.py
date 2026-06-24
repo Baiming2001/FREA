@@ -89,6 +89,9 @@ class CarlaEnv(gym.Env):
         self.actor_camera_sensors = {}
         self.actor_camera_imgs = {}
         self.camera_actor_ids = {}
+        self.actor_lidar_sensors = {}
+        self.actor_lidar_points = {}
+        self.lidar_actor_ids = {}
         self.metadata_actor_roles = ['ego', 'leading', 'other']
         self.camera_actor_roles = ['ego', 'other']
         self.draw_debug_overlays = env_params.get('draw_debug_overlays', False)
@@ -192,6 +195,19 @@ class CarlaEnv(gym.Env):
                     view_name: np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
                     for view_name in self.camera_view_transforms
                 }
+                for role_name in self.camera_actor_roles
+            }
+            self.actor_lidar_bp = CarlaDataProvider._blueprint_library.find('sensor.lidar.ray_cast')
+            self.actor_lidar_bp.set_attribute('channels', '32')
+            self.actor_lidar_bp.set_attribute('range', '70')
+            self.actor_lidar_bp.set_attribute('upper_fov', '10')
+            self.actor_lidar_bp.set_attribute('lower_fov', '-20')
+            self.actor_lidar_bp.set_attribute('rotation_frequency', '10')
+            self.actor_lidar_bp.set_attribute('points_per_second', '560000')
+            self.actor_lidar_bp.set_attribute('sensor_tick', str(self.fixed_delta_seconds))
+            self.actor_lidar_trans = carla.Transform(carla.Location(x=0.0, z=2.1))
+            self.actor_lidar_points = {
+                role_name: np.zeros((0, 4), dtype=np.float32)
                 for role_name in self.camera_actor_roles
             }
 
@@ -451,6 +467,14 @@ class CarlaEnv(gym.Env):
         self.actor_camera_sensors = {}
         self.camera_actor_ids = {}
 
+    def _remove_actor_lidar_sensors(self):
+        for sensor in self.actor_lidar_sensors.values():
+            if sensor is not None and sensor.is_alive:
+                sensor.stop()
+                sensor.destroy()
+        self.actor_lidar_sensors = {}
+        self.lidar_actor_ids = {}
+
     def _sync_actor_camera_sensors(self):
         if not self.save_camera_frames or self.eval_mode != 'render':
             return
@@ -492,6 +516,40 @@ class CarlaEnv(gym.Env):
                 self.actor_camera_sensors[role_name][view_name] = sensor
             self.camera_actor_ids[role_name] = current_actor_id
 
+    def _sync_actor_lidar_sensors(self):
+        if not self.save_camera_frames or self.eval_mode != 'render':
+            return
+        self_weakref = weakref.ref(self)
+
+        def get_actor_lidar_points(env_self, role_name, data):
+            points = np.frombuffer(data.raw_data, dtype=np.float32)
+            env_self.actor_lidar_points[role_name] = np.reshape(points, (-1, 4))
+
+        for role_name in self.camera_actor_roles:
+            actor = self._get_camera_target_actor(role_name)
+            current_actor_id = actor.id if actor is not None else None
+            previous_actor_id = self.lidar_actor_ids.get(role_name)
+
+            if current_actor_id == previous_actor_id and role_name in self.actor_lidar_sensors:
+                continue
+
+            existing_sensor = self.actor_lidar_sensors.pop(role_name, None)
+            if existing_sensor is not None and existing_sensor.is_alive:
+                existing_sensor.stop()
+                existing_sensor.destroy()
+
+            if actor is None:
+                self.lidar_actor_ids.pop(role_name, None)
+                continue
+
+            sensor = self.world.spawn_actor(self.actor_lidar_bp, self.actor_lidar_trans, attach_to=actor)
+            sensor.listen(
+                lambda data, role=role_name, self_ref=self_weakref:
+                get_actor_lidar_points(self_ref(), role, data) if self_ref() else None
+            )
+            self.actor_lidar_sensors[role_name] = sensor
+            self.lidar_actor_ids[role_name] = current_actor_id
+
     def _write_scene_metadata(self, base_dir):
         meta_path = os.path.join(base_dir, 'meta.json')
         os.makedirs(base_dir, exist_ok=True)
@@ -525,6 +583,13 @@ class CarlaEnv(gym.Env):
             'scenario_subtype_id': scene_naming['scenario_subtype_id'],
             'scenario_number': scene_naming['scenario_number'],
             'scene_name': scene_naming['scene_name'],
+            'lidar': {
+                'roles': list(self.camera_actor_roles),
+                'channels': 32,
+                'range_m': 70,
+                'vertical_fov_deg': 30,
+                'rotation_frequency_hz': 10,
+            },
             'accident_type': 'pending',
         }
         with open(meta_path, 'w', encoding='utf-8') as meta_file:
@@ -569,6 +634,30 @@ class CarlaEnv(gym.Env):
                 Image.fromarray(image_array).save(os.path.join(view_dir, frame_name))
         self.front_camera_frame_idx += 1
 
+    def _save_actor_lidar_frame(self):
+        if not self.save_camera_frames or self.eval_mode != 'render':
+            return
+        if self.time_step % self.capture_stride != 0:
+            return
+
+        scenario_name = f"Scenario{self.config.scenario_id}"
+        map_name = self.world.get_map().name.split('/')[-1]
+        base_dir = os.path.join(
+            self.output_dir,
+            f"{scenario_name}_{map_name}",
+            "camera_frames",
+            f"data_{self.config.data_id:04d}"
+        )
+        self._write_scene_metadata(base_dir)
+
+        frame_name = f"frame_{max(self.front_camera_frame_idx - 1, 0):04d}.npy"
+        for role_name, point_cloud in self.actor_lidar_points.items():
+            if role_name not in self.actor_lidar_sensors:
+                continue
+            lidar_dir = os.path.join(base_dir, role_name, 'lidar')
+            os.makedirs(lidar_dir, exist_ok=True)
+            np.save(os.path.join(lidar_dir, frame_name), point_cloud)
+
     def reset(self, config, env_id):
         self.config = config
         self.env_id = env_id
@@ -602,6 +691,7 @@ class CarlaEnv(gym.Env):
         # set controlled bv
         self.CBVs_selection()
         self._sync_actor_camera_sensors()
+        self._sync_actor_lidar_sensors()
 
         # Get actors' polygon list (for visualization)
         if self.birdeye_render:
@@ -617,6 +707,7 @@ class CarlaEnv(gym.Env):
             self.world.tick()
 
         self._save_front_camera_frame()
+        self._save_actor_lidar_frame()
 
         return self._get_obs(), self._get_info(next_info=False, reset=True)
 
@@ -650,6 +741,7 @@ class CarlaEnv(gym.Env):
 
             if self.save_camera_frames:
                 self._sync_actor_camera_sensors()
+                self._sync_actor_lidar_sensors()
 
             def get_sem_img(ego_self, data):
                 array = np.frombuffer(data.raw_data, dtype=np.dtype("uint8"))
@@ -749,11 +841,13 @@ class CarlaEnv(gym.Env):
         # select the new CBV
         self.CBVs_selection() if self.scenario_manager.running else None
         self._sync_actor_camera_sensors()
+        self._sync_actor_lidar_sensors()
 
         updated_CBVs_info = self._get_info(next_info=False)  # info of new CBV
 
         self.visualize_actors()  # visualize the controlled bv and the waypoints in clients side after tick
         self._save_front_camera_frame()
+        self._save_actor_lidar_frame()
 
         # Update timesteps
         self.time_step += 1
@@ -1062,6 +1156,7 @@ class CarlaEnv(gym.Env):
             self.camera_sensor.destroy()
             self.camera_sensor = None
         self._remove_actor_camera_sensors()
+        self._remove_actor_lidar_sensors()
         if self.sem_sensor is not None:
             self.sem_sensor.stop()
             self.sem_sensor.destroy()
@@ -1132,11 +1227,17 @@ class CarlaEnv(gym.Env):
         self.front_camera_frame_idx = 0
         self.actor_camera_sensors = {}
         self.camera_actor_ids = {}
+        self.actor_lidar_sensors = {}
+        self.lidar_actor_ids = {}
         self.actor_camera_imgs = {
             role_name: {
                 view_name: np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
                 for view_name in getattr(self, 'camera_view_transforms', {'front': None})
             }
+            for role_name in self.camera_actor_roles
+        }
+        self.actor_lidar_points = {
+            role_name: np.zeros((0, 4), dtype=np.float32)
             for role_name in self.camera_actor_roles
         }
 
