@@ -64,6 +64,10 @@ class CarlaEnv(gym.Env):
         self.enable_sem = env_params['enable_sem']
         self.save_camera_frames = env_params.get('save_camera_frames', False)
         self.camera_fps = env_params.get('camera_fps', 10)
+        self.camera_export_width = env_params.get('camera_export_width', 1600)
+        self.camera_export_height = env_params.get('camera_export_height', 900)
+        self.camera_export_format = str(env_params.get('camera_export_format', 'jpg')).lower()
+        self.camera_export_quality = env_params.get('camera_export_quality', 90)
         self.fixed_delta_seconds = env_params.get('fixed_delta_seconds', 0.1)
         self.capture_stride = max(1, round((1 / self.fixed_delta_seconds) / self.camera_fps))
         self.output_dir = env_params.get('output_dir')
@@ -182,8 +186,8 @@ class CarlaEnv(gym.Env):
 
             # actor-view camera sensors for saving multi-view image sequences
             self.front_camera_bp = CarlaDataProvider._blueprint_library.find('sensor.camera.rgb')
-            self.front_camera_bp.set_attribute('image_size_x', str(self.obs_size))
-            self.front_camera_bp.set_attribute('image_size_y', str(self.obs_size))
+            self.front_camera_bp.set_attribute('image_size_x', str(self.camera_export_width))
+            self.front_camera_bp.set_attribute('image_size_y', str(self.camera_export_height))
             self.front_camera_bp.set_attribute('fov', '110')
             self.front_camera_bp.set_attribute('sensor_tick', str(self.fixed_delta_seconds))
             self.camera_view_transforms = {
@@ -193,7 +197,7 @@ class CarlaEnv(gym.Env):
             }
             self.actor_camera_imgs = {
                 role_name: {
-                    view_name: np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
+                    view_name: np.zeros((self.camera_export_height, self.camera_export_width, 3), dtype=np.uint8)
                     for view_name in self.camera_view_transforms
                 }
                 for role_name in self.camera_actor_roles
@@ -573,6 +577,12 @@ class CarlaEnv(gym.Env):
             'data_id': self.config.data_id,
             'map': self.world.get_map().name.split('/')[-1],
             'camera_fps': self.camera_fps,
+            'camera_export': {
+                'width': self.camera_export_width,
+                'height': self.camera_export_height,
+                'format': self.camera_export_format,
+                'quality': self.camera_export_quality if self.camera_export_format in ('jpg', 'jpeg') else None,
+            },
             'views': list(self.camera_view_transforms.keys()),
             'actors': actors_meta,
             'parameters': self.config.parameters,
@@ -625,14 +635,20 @@ class CarlaEnv(gym.Env):
         )
         self._write_scene_metadata(base_dir)
 
-        frame_name = f"frame_{self.front_camera_frame_idx:04d}.png"
+        frame_ext = 'jpg' if self.camera_export_format in ('jpg', 'jpeg') else self.camera_export_format
+        frame_name = f"frame_{self.front_camera_frame_idx:04d}.{frame_ext}"
         for role_name, role_images in self.actor_camera_imgs.items():
             if role_name not in self.actor_camera_sensors:
                 continue
             for view_name, image_array in role_images.items():
                 view_dir = os.path.join(base_dir, role_name, view_name)
                 os.makedirs(view_dir, exist_ok=True)
-                Image.fromarray(image_array).save(os.path.join(view_dir, frame_name))
+                image = Image.fromarray(image_array)
+                save_path = os.path.join(view_dir, frame_name)
+                if frame_ext in ('jpg', 'jpeg'):
+                    image.save(save_path, format='JPEG', quality=int(self.camera_export_quality), optimize=True)
+                else:
+                    image.save(save_path)
         self.front_camera_frame_idx += 1
 
     def _save_actor_lidar_frame(self):
@@ -1232,7 +1248,7 @@ class CarlaEnv(gym.Env):
         self.lidar_actor_ids = {}
         self.actor_camera_imgs = {
             role_name: {
-                view_name: np.zeros((self.obs_size, self.obs_size, 3), dtype=np.uint8)
+                view_name: np.zeros((self.camera_export_height, self.camera_export_width, 3), dtype=np.uint8)
                 for view_name in getattr(self, 'camera_view_transforms', {'front': None})
             }
             for role_name in self.camera_actor_roles

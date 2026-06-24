@@ -60,6 +60,12 @@ def parse_args():
         help="Number of scenes to generate per town.",
     )
     parser.add_argument(
+        "--per-town-map",
+        nargs="+",
+        default=None,
+        help="Optional explicit per-town counts, e.g. Town01=42 Town02=42 Town03=41.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=0,
@@ -77,7 +83,42 @@ def parse_args():
         default=1,
         help="Metadata scenario subtype id written into parameters.",
     )
+    parser.add_argument(
+        "--split-name",
+        type=str,
+        default=None,
+        choices=["train", "val", "test", None],
+        help="Optional dataset split label written into parameters.",
+    )
+    parser.add_argument(
+        "--start-data-id",
+        type=int,
+        default=0,
+        help="Starting data_id and scenario_number offset.",
+    )
     return parser.parse_args()
+
+
+def parse_per_town_map(entries):
+    if not entries:
+        return None
+
+    result = {}
+    for entry in entries:
+        if "=" not in entry:
+            raise ValueError(f"Invalid --per-town-map entry: {entry}. Expected TownXX=count")
+        town, count_text = entry.split("=", 1)
+        town = town.strip()
+        if not town:
+            raise ValueError(f"Invalid empty town name in --per-town-map entry: {entry}")
+        try:
+            count = int(count_text)
+        except ValueError as exc:
+            raise ValueError(f"Invalid count in --per-town-map entry: {entry}") from exc
+        if count < 0:
+            raise ValueError(f"Count must be non-negative in --per-town-map entry: {entry}")
+        result[town] = count
+    return result
 
 
 def weighted_choice(rng, weight_dict):
@@ -111,8 +152,13 @@ def discover_routes(root_dir, scenario_id):
 def generate_entries(args, routes_by_town):
     rng = random.Random(args.seed)
     entries = []
-    data_id = 0
+    data_id = args.start_data_id
     available_towns = sorted(routes_by_town.keys())
+    per_town_map = parse_per_town_map(args.per_town_map)
+    if per_town_map is not None:
+        missing_towns = [town for town in args.towns if town not in per_town_map]
+        if missing_towns:
+            raise ValueError(f"Missing per-town counts for: {missing_towns}")
 
     for town in args.towns:
         route_ids = routes_by_town.get(town, [])
@@ -124,7 +170,8 @@ def generate_entries(args, routes_by_town):
 
         shuffled_routes = route_ids[:]
         rng.shuffle(shuffled_routes)
-        for index in range(args.per_town):
+        town_scene_count = per_town_map[town] if per_town_map is not None else args.per_town
+        for index in range(town_scene_count):
             route_id = shuffled_routes[index % len(shuffled_routes)]
             weather_label = weighted_choice(rng, DEFAULT_WEATHER_WEIGHTS)
             time_of_day_label = weighted_choice(rng, DEFAULT_TIME_WEIGHTS)
@@ -142,6 +189,7 @@ def generate_entries(args, routes_by_town):
                     "target_outcome": target_outcome,
                     "weather_label": weather_label,
                     "time_of_day_label": time_of_day_label,
+                    "split_name": args.split_name,
                 },
             })
             data_id += 1
@@ -153,6 +201,7 @@ def main():
     args = parse_args()
     routes_by_town = discover_routes(args.root_dir, args.scenario_id)
     entries = generate_entries(args, routes_by_town)
+    per_town_map = parse_per_town_map(args.per_town_map)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as file:
@@ -161,7 +210,8 @@ def main():
     print(f"Generated {len(entries)} entries -> {args.output}")
     for town in args.towns:
         route_count = len(routes_by_town.get(town, []))
-        print(f"{town}: {args.per_town} scenes using {route_count} available routes")
+        town_scene_count = per_town_map[town] if per_town_map is not None else args.per_town
+        print(f"{town}: {town_scene_count} scenes using {route_count} available routes")
 
 
 if __name__ == "__main__":
