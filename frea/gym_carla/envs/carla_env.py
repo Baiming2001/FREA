@@ -55,6 +55,7 @@ class CarlaEnv(gym.Env):
         # Record the time of total steps and resetting steps
         self.reset_step = 0
         self.total_step = 0
+        self.time_step = 0
         self.env_id = None
         self.ego_vehicle = None
         self.ego_nearby_vehicles = []
@@ -611,7 +612,7 @@ class CarlaEnv(gym.Env):
     def _save_front_camera_frame(self):
         if not self.save_camera_frames or self.eval_mode != 'render':
             return
-        if self.time_step % self.capture_stride != 0:
+        if getattr(self, 'time_step', 0) % self.capture_stride != 0:
             return
 
         scenario_name = f"Scenario{self.config.scenario_id}"
@@ -637,7 +638,7 @@ class CarlaEnv(gym.Env):
     def _save_actor_lidar_frame(self):
         if not self.save_camera_frames or self.eval_mode != 'render':
             return
-        if self.time_step % self.capture_stride != 0:
+        if getattr(self, 'time_step', 0) % self.capture_stride != 0:
             return
 
         scenario_name = f"Scenario{self.config.scenario_id}"
