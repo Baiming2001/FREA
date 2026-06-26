@@ -145,11 +145,39 @@ class RouteScenario():
         candidates = waypoint.next(distance) if forward else waypoint.previous(distance)
         return candidates[0] if candidates else waypoint
 
+    def _is_same_direction_lane(self, reference_waypoint, candidate_waypoint, min_dot=0.5):
+        if reference_waypoint is None or candidate_waypoint is None:
+            return False
+
+        reference_forward = reference_waypoint.transform.get_forward_vector()
+        candidate_forward = candidate_waypoint.transform.get_forward_vector()
+        direction_dot = (
+            reference_forward.x * candidate_forward.x
+            + reference_forward.y * candidate_forward.y
+            + reference_forward.z * candidate_forward.z
+        )
+        return direction_dot >= min_dot
+
+    def _slice_trajectory_for_route_start(self, trajectory, route_start_ratio):
+        if trajectory is None or len(trajectory) <= 1:
+            return trajectory
+
+        clamped_ratio = max(0.0, min(0.7, float(route_start_ratio)))
+        max_start_index = max(0, int((len(trajectory) - 1) * clamped_ratio))
+        sliced_trajectory = trajectory[max_start_index:]
+        if len(sliced_trajectory) >= 2:
+            return sliced_trajectory
+        return trajectory
+
     def _get_adjacent_driving_lane(self, waypoint, lane_side):
         candidate = waypoint.get_left_lane() if lane_side == 'left' else waypoint.get_right_lane()
-        if candidate is None or candidate.lane_type != carla.LaneType.Driving:
+        if candidate is None or candidate.lane_type != carla.LaneType.Driving or not self._is_same_direction_lane(waypoint, candidate):
             fallback = waypoint.get_right_lane() if lane_side == 'left' else waypoint.get_left_lane()
-            if fallback is not None and fallback.lane_type == carla.LaneType.Driving:
+            if (
+                fallback is not None
+                and fallback.lane_type == carla.LaneType.Driving
+                and self._is_same_direction_lane(waypoint, fallback)
+            ):
                 return fallback
             return None
         return candidate
@@ -227,6 +255,45 @@ class RouteScenario():
             lane_type=carla.LaneType.Driving
         )
 
+    def _get_same_lane_rear_waypoint(self, reference_waypoint, back_distance):
+        if reference_waypoint is None:
+            return None
+        return self._shift_waypoint(reference_waypoint, back_distance, forward=False)
+
+    def _resolve_scenario3_other_waypoint(self, ego_start_waypoint, scenario_params):
+        adjacent_lane, _ = self._find_rear_adjacent_lane(
+            ego_start_waypoint,
+            scenario_params['other_lane_side']
+        )
+        if adjacent_lane is not None:
+            other_waypoint = self._shift_waypoint(adjacent_lane, scenario_params['other_distance_back_m'], forward=False)
+            if self._is_waypoint_behind_reference(ego_start_waypoint, other_waypoint):
+                return other_waypoint
+
+            fallback_distances = [scenario_params['other_distance_back_m'] + extra for extra in (5.0, 10.0, 15.0, 20.0)]
+            for fallback_distance in fallback_distances:
+                fallback_waypoint = self._shift_waypoint(adjacent_lane, fallback_distance, forward=False)
+                if self._is_waypoint_behind_reference(ego_start_waypoint, fallback_waypoint):
+                    return fallback_waypoint
+
+            projected_waypoint = self._project_to_rear_adjacent_waypoint(
+                ego_start_waypoint,
+                scenario_params['other_lane_side'],
+                scenario_params['other_distance_back_m']
+            )
+            if projected_waypoint is not None and self._is_waypoint_behind_reference(ego_start_waypoint, projected_waypoint):
+                return projected_waypoint
+
+        same_lane_waypoint = self._get_same_lane_rear_waypoint(ego_start_waypoint, scenario_params['other_distance_back_m'])
+        if same_lane_waypoint is not None and self._is_waypoint_behind_reference(ego_start_waypoint, same_lane_waypoint, min_back_distance=0.5):
+            return same_lane_waypoint
+
+        extended_same_lane = self._get_same_lane_rear_waypoint(ego_start_waypoint, scenario_params['other_distance_back_m'] + 5.0)
+        if extended_same_lane is not None and self._is_waypoint_behind_reference(ego_start_waypoint, extended_same_lane, min_back_distance=0.5):
+            return extended_same_lane
+
+        raise RuntimeError('Failed to place Scenario 3 other vehicle behind ego vehicle')
+
     def _spawn_special_actor(self, role_name, transform, vehicle_model):
         actor = CarlaDataProvider.request_new_actor(
             vehicle_model,
@@ -251,30 +318,7 @@ class RouteScenario():
             raise RuntimeError('Failed to get ego start waypoint for Scenario 3')
 
         leading_waypoint = self._shift_waypoint(ego_start_waypoint, scenario_params['leading_distance_m'], forward=True)
-        adjacent_lane, _ = self._find_rear_adjacent_lane(
-            ego_start_waypoint,
-            scenario_params['other_lane_side']
-        )
-        if adjacent_lane is None:
-            raise RuntimeError('Failed to find an adjacent driving lane for Scenario 3 other vehicle')
-        other_waypoint = self._shift_waypoint(adjacent_lane, scenario_params['other_distance_back_m'], forward=False)
-        if not self._is_waypoint_behind_reference(ego_start_waypoint, other_waypoint):
-            fallback_distances = [scenario_params['other_distance_back_m'] + extra for extra in (5.0, 10.0, 15.0, 20.0)]
-            for fallback_distance in fallback_distances:
-                fallback_waypoint = self._shift_waypoint(adjacent_lane, fallback_distance, forward=False)
-                if self._is_waypoint_behind_reference(ego_start_waypoint, fallback_waypoint):
-                    other_waypoint = fallback_waypoint
-                    break
-            else:
-                projected_waypoint = self._project_to_rear_adjacent_waypoint(
-                    ego_start_waypoint,
-                    scenario_params['other_lane_side'],
-                    scenario_params['other_distance_back_m']
-                )
-                if projected_waypoint is not None and self._is_waypoint_behind_reference(ego_start_waypoint, projected_waypoint):
-                    other_waypoint = projected_waypoint
-                else:
-                    raise RuntimeError('Failed to place Scenario 3 other vehicle behind ego vehicle')
+        other_waypoint = self._resolve_scenario3_other_waypoint(ego_start_waypoint, scenario_params)
 
         self._spawn_special_actor('leading', leading_waypoint.transform, 'vehicle.tesla.model3')
         self._spawn_special_actor('other', other_waypoint.transform, 'vehicle.audi.tt')
@@ -304,7 +348,11 @@ class RouteScenario():
                 if ego_vehicle is not None:
                     break
         else:
-            gps_route, route = interpolate_trajectory(self.world, self.config.trajectory)
+            route_start_ratio = 0.0
+            if self.config.parameters is not None:
+                route_start_ratio = self.config.parameters.get('route_start_ratio', 0.0)
+            trajectory = self._slice_trajectory_for_route_start(self.config.trajectory, route_start_ratio)
+            gps_route, route = interpolate_trajectory(self.world, trajectory)
             ego_vehicle = self._spawn_ego_vehicle(route[0][0], self.config.auto_ego)
 
         CarlaDataProvider.set_ego_vehicle_route(ego_vehicle, convert_transform_to_location(route))

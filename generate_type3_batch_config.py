@@ -7,7 +7,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 
-DEFAULT_TOWNS = ["Town01", "Town02", "Town03", "Town04", "Town05", "Town06"]
+DEFAULT_TOWNS = ["Town01", "Town02", "Town03", "Town04", "Town05", "Town_Safebench_Light"]
 DEFAULT_WEATHER_WEIGHTS = {
     "clear": 4,
     "rainy": 4,
@@ -96,6 +96,25 @@ def parse_args():
         default=0,
         help="Starting data_id and scenario_number offset.",
     )
+    parser.add_argument(
+        "--allocation-mode",
+        type=str,
+        default="route",
+        choices=["route", "town"],
+        help="How to distribute scenes: uniformly by route or by town.",
+    )
+    parser.add_argument(
+        "--total-scenes",
+        type=int,
+        default=None,
+        help="Total number of scenes to generate when allocation-mode is route.",
+    )
+    parser.add_argument(
+        "--route-start-max-fraction",
+        type=float,
+        default=0.7,
+        help="Maximum route progress fraction for randomized ego spawn start.",
+    )
     return parser.parse_args()
 
 
@@ -133,6 +152,7 @@ def discover_routes(root_dir, scenario_id):
         raise FileNotFoundError(f"Route directory not found: {route_dir}")
 
     routes_by_town = defaultdict(list)
+    route_records = []
     for route_file in sorted(route_dir.glob(f"scenario_{scenario_id:02d}_route_*.xml")):
         route_id = int(route_file.stem.split("_")[-1])
         tree = ET.parse(route_file)
@@ -143,13 +163,40 @@ def discover_routes(root_dir, scenario_id):
         if town is None:
             continue
         routes_by_town[town].append(route_id)
+        route_records.append({"town": town, "route_id": route_id})
 
     for town, route_ids in routes_by_town.items():
         route_ids.sort()
-    return routes_by_town
+    route_records.sort(key=lambda item: (item["town"], item["route_id"]))
+    return routes_by_town, route_records
 
 
-def generate_entries(args, routes_by_town):
+def build_entry(data_id, scenario_id, route_id, town, args, rng):
+    weather_label = weighted_choice(rng, DEFAULT_WEATHER_WEIGHTS)
+    time_of_day_label = weighted_choice(rng, DEFAULT_TIME_WEIGHTS)
+    target_outcome = weighted_choice(rng, DEFAULT_OUTCOME_WEIGHTS)
+    route_start_ratio = rng.uniform(0.0, args.route_start_max_fraction)
+
+    return {
+        "data_id": data_id,
+        "scenario_id": scenario_id,
+        "route_id": route_id,
+        "risk_level": None,
+        "parameters": {
+            "scenario_type_id": args.scenario_type_id,
+            "scenario_subtype_id": args.scenario_subtype_id,
+            "scenario_number": data_id + 1,
+            "target_outcome": target_outcome,
+            "weather_label": weather_label,
+            "time_of_day_label": time_of_day_label,
+            "split_name": args.split_name,
+            "route_start_ratio": route_start_ratio,
+            "source_town": town,
+        },
+    }
+
+
+def generate_entries_town_mode(args, routes_by_town):
     rng = random.Random(args.seed)
     entries = []
     data_id = args.start_data_id
@@ -173,34 +220,52 @@ def generate_entries(args, routes_by_town):
         town_scene_count = per_town_map[town] if per_town_map is not None else args.per_town
         for index in range(town_scene_count):
             route_id = shuffled_routes[index % len(shuffled_routes)]
-            weather_label = weighted_choice(rng, DEFAULT_WEATHER_WEIGHTS)
-            time_of_day_label = weighted_choice(rng, DEFAULT_TIME_WEIGHTS)
-            target_outcome = weighted_choice(rng, DEFAULT_OUTCOME_WEIGHTS)
-
-            entries.append({
-                "data_id": data_id,
-                "scenario_id": args.scenario_id,
-                "route_id": route_id,
-                "risk_level": None,
-                "parameters": {
-                    "scenario_type_id": args.scenario_type_id,
-                    "scenario_subtype_id": args.scenario_subtype_id,
-                    "scenario_number": data_id + 1,
-                    "target_outcome": target_outcome,
-                    "weather_label": weather_label,
-                    "time_of_day_label": time_of_day_label,
-                    "split_name": args.split_name,
-                },
-            })
+            entries.append(build_entry(data_id, args.scenario_id, route_id, town, args, rng))
             data_id += 1
 
     return entries
 
 
+def generate_entries_route_mode(args, route_records):
+    if args.total_scenes is None:
+        raise ValueError("--total-scenes is required when --allocation-mode route")
+
+    rng = random.Random(args.seed)
+    entries = []
+    data_id = args.start_data_id
+    selected_routes = [item for item in route_records if item["town"] in args.towns]
+    if not selected_routes:
+        raise ValueError(f"No routes discovered for selected towns: {args.towns}")
+
+    shuffled_routes = selected_routes[:]
+    rng.shuffle(shuffled_routes)
+    for index in range(args.total_scenes):
+        route_info = shuffled_routes[index % len(shuffled_routes)]
+        entries.append(
+            build_entry(
+                data_id,
+                args.scenario_id,
+                route_info["route_id"],
+                route_info["town"],
+                args,
+                rng,
+            )
+        )
+        data_id += 1
+
+    return entries
+
+
+def generate_entries(args, routes_by_town, route_records):
+    if args.allocation_mode == "route":
+        return generate_entries_route_mode(args, route_records)
+    return generate_entries_town_mode(args, routes_by_town)
+
+
 def main():
     args = parse_args()
-    routes_by_town = discover_routes(args.root_dir, args.scenario_id)
-    entries = generate_entries(args, routes_by_town)
+    routes_by_town, route_records = discover_routes(args.root_dir, args.scenario_id)
+    entries = generate_entries(args, routes_by_town, route_records)
     per_town_map = parse_per_town_map(args.per_town_map)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -208,10 +273,18 @@ def main():
         json.dump(entries, file, indent=2)
 
     print(f"Generated {len(entries)} entries -> {args.output}")
-    for town in args.towns:
-        route_count = len(routes_by_town.get(town, []))
-        town_scene_count = per_town_map[town] if per_town_map is not None else args.per_town
-        print(f"{town}: {town_scene_count} scenes using {route_count} available routes")
+    if args.allocation_mode == "route":
+        route_usage = defaultdict(int)
+        for entry in entries:
+            route_usage[(entry["parameters"]["source_town"], entry["route_id"])] += 1
+        print(f"Allocation mode: route ({len(route_usage)} unique routes used)")
+        for (town, route_id), count in sorted(route_usage.items()):
+            print(f"{town}: route {route_id} -> {count} scenes")
+    else:
+        for town in args.towns:
+            route_count = len(routes_by_town.get(town, []))
+            town_scene_count = per_town_map[town] if per_town_map is not None else args.per_town
+            print(f"{town}: {town_scene_count} scenes using {route_count} available routes")
 
 
 if __name__ == "__main__":
