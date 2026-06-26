@@ -158,16 +158,20 @@ class RouteScenario():
         )
         return direction_dot >= min_dot
 
-    def _slice_trajectory_for_route_start(self, trajectory, route_start_ratio):
-        if trajectory is None or len(trajectory) <= 1:
-            return trajectory
+    def _slice_dense_route_for_route_start(self, gps_route, route, route_start_ratio, min_remaining_points=20):
+        if route is None or len(route) <= min_remaining_points:
+            return gps_route, route
 
         clamped_ratio = max(0.0, min(0.7, float(route_start_ratio)))
-        max_start_index = max(0, int((len(trajectory) - 1) * clamped_ratio))
-        sliced_trajectory = trajectory[max_start_index:]
-        if len(sliced_trajectory) >= 2:
-            return sliced_trajectory
-        return trajectory
+        max_start_index = max(0, int((len(route) - min_remaining_points) * clamped_ratio))
+        if max_start_index <= 0:
+            return gps_route, route
+
+        sliced_route = route[max_start_index:]
+        sliced_gps_route = gps_route[max_start_index:] if gps_route is not None else gps_route
+        if len(sliced_route) < min_remaining_points:
+            return gps_route, route
+        return sliced_gps_route, sliced_route
 
     def _get_adjacent_driving_lane(self, waypoint, lane_side):
         candidate = waypoint.get_left_lane() if lane_side == 'left' else waypoint.get_right_lane()
@@ -351,8 +355,8 @@ class RouteScenario():
             route_start_ratio = 0.0
             if self.config.parameters is not None:
                 route_start_ratio = self.config.parameters.get('route_start_ratio', 0.0)
-            trajectory = self._slice_trajectory_for_route_start(self.config.trajectory, route_start_ratio)
-            gps_route, route = interpolate_trajectory(self.world, trajectory)
+            gps_route, route = interpolate_trajectory(self.world, self.config.trajectory)
+            gps_route, route = self._slice_dense_route_for_route_start(gps_route, route, route_start_ratio)
             ego_vehicle = self._spawn_ego_vehicle(route[0][0], self.config.auto_ego)
 
         CarlaDataProvider.set_ego_vehicle_route(ego_vehicle, convert_transform_to_location(route))

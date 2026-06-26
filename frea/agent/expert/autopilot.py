@@ -204,6 +204,14 @@ class AutoPilot(object):
             waypoint_route_draw = np.array([[node[0][0], node[0][1]] for node in waypoint_route])
             draw_route(self._world, vehicle=self._vehicle, waypoint_route=waypoint_route_draw)
 
+        if len(waypoint_route) == 0:
+            control = carla.VehicleControl()
+            control.steer = 0.0
+            control.throttle = 0.0
+            control.brake = 1.0
+            self.remaining_route = waypoint_route
+            return control
+
         _, near_command = waypoint_route[1] if len(waypoint_route) > 1 else waypoint_route[0]  # needs HD map
 
         self.remaining_route = waypoint_route
