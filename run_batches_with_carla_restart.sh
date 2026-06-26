@@ -60,11 +60,16 @@ main() {
     cat <<'EOF'
 Usage:
   ./run_batches_with_carla_restart.sh <split_name> <output_subdir> <scenario_yaml_1> [scenario_yaml_2 ...]
+  ./run_batches_with_carla_restart.sh <split_name> <output_subdir> --yaml-dir <dir> [--prefix <prefix>]
 
 Example:
   ./run_batches_with_carla_restart.sh train train \
     standard_eval_scenario3_train_batch_00.yaml \
     standard_eval_scenario3_train_batch_01.yaml
+
+  ./run_batches_with_carla_restart.sh train train \
+    --yaml-dir /home/ubuntu/baiming/FREA/frea/scenario/config/batches \
+    --prefix standard_eval_scenario3_train_batch_
 EOF
     exit 1
   fi
@@ -73,10 +78,51 @@ EOF
   shift
   local output_subdir="$1"
   shift
+  local scenario_cfgs=()
+
+  if [ "${1:-}" = "--yaml-dir" ]; then
+    if [ "$#" -lt 2 ]; then
+      echo "Missing directory after --yaml-dir"
+      exit 1
+    fi
+    local yaml_dir="$2"
+    shift 2
+    local prefix=""
+    if [ "${1:-}" = "--prefix" ]; then
+      if [ "$#" -lt 2 ]; then
+        echo "Missing prefix after --prefix"
+        exit 1
+      fi
+      prefix="$2"
+      shift 2
+    fi
+
+    if [ ! -d "${yaml_dir}" ]; then
+      echo "YAML directory not found: ${yaml_dir}"
+      exit 1
+    fi
+
+    if [ -n "${prefix}" ]; then
+      while IFS= read -r file; do
+        scenario_cfgs+=("${file}")
+      done < <(find "${yaml_dir}" -maxdepth 1 -type f -name "${prefix}*.yaml" | sort)
+    else
+      while IFS= read -r file; do
+        scenario_cfgs+=("${file}")
+      done < <(find "${yaml_dir}" -maxdepth 1 -type f -name "*.yaml" | sort)
+    fi
+  else
+    scenario_cfgs=("$@")
+  fi
+
+  if [ "${#scenario_cfgs[@]}" -eq 0 ]; then
+    echo "No scenario yaml files found to run."
+    exit 1
+  fi
 
   cd "${ROOT_DIR}"
 
-  for scenario_cfg in "$@"; do
+  for scenario_cfg in "${scenario_cfgs[@]}"; do
     local batch_name
     batch_name="$(basename "${scenario_cfg}" .yaml)"
     local output_dir="${OUTPUT_BASE}/${output_subdir}/${batch_name}"
