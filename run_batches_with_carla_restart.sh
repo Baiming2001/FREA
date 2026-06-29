@@ -10,11 +10,13 @@ OUTPUT_BASE="${OUTPUT_BASE:-/media/ubuntu/TOSHIBA EXT1/diy/type3_295_route_batch
 CARLA_WAIT_SECONDS="${CARLA_WAIT_SECONDS:-35}"
 CARLA_PORT="${CARLA_PORT:-2000}"
 MAX_RETRIES_PER_BATCH="${MAX_RETRIES_PER_BATCH:-2}"
+NUM_SCENARIO="${NUM_SCENARIO:-1}"
 
 COMMON_ARGS=(
   --agent_cfg expert.yaml
   --mode eval
   --eval_mode render
+  --num_scenario "${NUM_SCENARIO}"
   --save_camera_frames
   --camera_fps 10
   --camera_only

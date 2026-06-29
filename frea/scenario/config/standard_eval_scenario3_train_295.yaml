@@ -23,4 +23,7 @@ train_episode:
 gamma: 0.99
 max_episode_step: 100
 warm_up_steps: 2
-traffic_intensity: 0.2
+traffic_intensity: 0.1
+client_timeout: 60.0
+world_load_retries: 3
+world_load_retry_wait: 10.0
