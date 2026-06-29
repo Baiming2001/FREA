@@ -11,6 +11,7 @@
 import copy
 import os
 import re
+import time
 import numpy as np
 import carla
 import pygame
@@ -63,6 +64,9 @@ class CarlaRunner:
         self.CBV_selection = scenario_config['CBV_selection']
         self.scenario_agent_learnable = scenario_config['learnable']
         self.scenario_id = scenario_config['scenario_id']
+        self.client_timeout = float(scenario_config.get('client_timeout', 60.0))
+        self.world_load_retries = int(scenario_config.get('world_load_retries', 3))
+        self.world_load_retry_wait = float(scenario_config.get('world_load_retry_wait', 10.0))
         # if the scenario agent need feasibility
         self.use_feasibility = scenario_config['feasibility']
         self.scenario_policy_type = scenario_config['policy_type']
@@ -70,7 +74,7 @@ class CarlaRunner:
 
         # apply settings to carla
         self.client = carla.Client('localhost', scenario_config['port'])
-        self.client.set_timeout(15.0)
+        self.client.set_timeout(self.client_timeout)
         self.world = None
         self.env = None
 
@@ -215,11 +219,27 @@ class CarlaRunner:
 
     def _init_world(self, town):
         self.logger.log(f">> Initializing carla world: {town}")
-        self.world = self.client.load_world(town)
+        last_error = None
+        for attempt in range(1, self.world_load_retries + 1):
+            try:
+                self.world = self.client.load_world(town)
+                break
+            except RuntimeError as exc:
+                last_error = exc
+                self.logger.log(
+                    f">> load_world retry {attempt}/{self.world_load_retries} failed for {town}: {exc}",
+                    color='yellow'
+                )
+                if attempt < self.world_load_retries:
+                    time.sleep(self.world_load_retry_wait)
+        else:
+            raise last_error
+
         settings = self.world.get_settings()
         settings.synchronous_mode = True
         settings.fixed_delta_seconds = self.fixed_delta_seconds
         self.world.apply_settings(settings)
+        time.sleep(2.0)
         CarlaDataProvider.set_client(self.client)
         CarlaDataProvider.set_world(self.world)
         CarlaDataProvider.set_traffic_manager_port(self.scenario_config['tm_port'])
