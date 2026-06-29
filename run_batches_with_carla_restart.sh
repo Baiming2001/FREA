@@ -11,6 +11,7 @@ CARLA_WAIT_SECONDS="${CARLA_WAIT_SECONDS:-35}"
 CARLA_PORT="${CARLA_PORT:-2000}"
 MAX_RETRIES_PER_BATCH="${MAX_RETRIES_PER_BATCH:-2}"
 NUM_SCENARIO="${NUM_SCENARIO:-1}"
+CAMERA_FPS="${CAMERA_FPS:-5}"
 
 COMMON_ARGS=(
   --agent_cfg expert.yaml
@@ -18,7 +19,7 @@ COMMON_ARGS=(
   --eval_mode render
   --num_scenario "${NUM_SCENARIO}"
   --save_camera_frames
-  --camera_fps 10
+  --camera_fps "${CAMERA_FPS}"
   --camera_only
   --progress_interval 20
 )

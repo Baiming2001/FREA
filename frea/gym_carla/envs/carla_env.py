@@ -63,11 +63,17 @@ class CarlaEnv(gym.Env):
         self.auto_ego = env_params['auto_ego']
         self.enable_sem = env_params['enable_sem']
         self.save_camera_frames = env_params.get('save_camera_frames', False)
+        self.camera_only = env_params.get('camera_only', False)
         self.camera_fps = env_params.get('camera_fps', 10)
-        self.camera_export_width = env_params.get('camera_export_width', 1600)
-        self.camera_export_height = env_params.get('camera_export_height', 900)
+        default_camera_width = 960 if self.camera_only else 1600
+        default_camera_height = 540 if self.camera_only else 900
+        default_camera_quality = 80 if self.camera_only else 90
+        self.camera_export_width = env_params.get('camera_export_width', default_camera_width)
+        self.camera_export_height = env_params.get('camera_export_height', default_camera_height)
         self.camera_export_format = str(env_params.get('camera_export_format', 'jpg')).lower()
-        self.camera_export_quality = env_params.get('camera_export_quality', 90)
+        self.camera_export_quality = env_params.get('camera_export_quality', default_camera_quality)
+        self.camera_export_optimize = env_params.get('camera_export_optimize', False)
+        self.save_actor_lidar_frames = env_params.get('save_actor_lidar_frames', not self.camera_only)
         self.fixed_delta_seconds = env_params.get('fixed_delta_seconds', 0.1)
         self.capture_stride = max(1, round((1 / self.fixed_delta_seconds) / self.camera_fps))
         self.output_dir = env_params.get('output_dir')
@@ -522,7 +528,7 @@ class CarlaEnv(gym.Env):
             self.camera_actor_ids[role_name] = current_actor_id
 
     def _sync_actor_lidar_sensors(self):
-        if not self.save_camera_frames or self.eval_mode != 'render':
+        if not self.save_camera_frames or not self.save_actor_lidar_frames or self.eval_mode != 'render':
             return
         self_weakref = weakref.ref(self)
 
@@ -582,6 +588,7 @@ class CarlaEnv(gym.Env):
                 'height': self.camera_export_height,
                 'format': self.camera_export_format,
                 'quality': self.camera_export_quality if self.camera_export_format in ('jpg', 'jpeg') else None,
+                'optimize': bool(self.camera_export_optimize) if self.camera_export_format in ('jpg', 'jpeg') else None,
             },
             'views': list(self.camera_view_transforms.keys()),
             'actors': actors_meta,
@@ -595,7 +602,8 @@ class CarlaEnv(gym.Env):
             'scenario_number': scene_naming['scenario_number'],
             'scene_name': scene_naming['scene_name'],
             'lidar': {
-                'roles': list(self.camera_actor_roles),
+                'enabled': bool(self.save_actor_lidar_frames),
+                'roles': list(self.camera_actor_roles) if self.save_actor_lidar_frames else [],
                 'channels': 32,
                 'range_m': 70,
                 'vertical_fov_deg': 30,
@@ -646,13 +654,18 @@ class CarlaEnv(gym.Env):
                 image = Image.fromarray(image_array)
                 save_path = os.path.join(view_dir, frame_name)
                 if frame_ext in ('jpg', 'jpeg'):
-                    image.save(save_path, format='JPEG', quality=int(self.camera_export_quality), optimize=True)
+                    image.save(
+                        save_path,
+                        format='JPEG',
+                        quality=int(self.camera_export_quality),
+                        optimize=bool(self.camera_export_optimize)
+                    )
                 else:
                     image.save(save_path)
         self.front_camera_frame_idx += 1
 
     def _save_actor_lidar_frame(self):
-        if not self.save_camera_frames or self.eval_mode != 'render':
+        if not self.save_camera_frames or not self.save_actor_lidar_frames or self.eval_mode != 'render':
             return
         if getattr(self, 'time_step', 0) % self.capture_stride != 0:
             return
@@ -758,7 +771,8 @@ class CarlaEnv(gym.Env):
 
             if self.save_camera_frames:
                 self._sync_actor_camera_sensors()
-                self._sync_actor_lidar_sensors()
+                if self.save_actor_lidar_frames:
+                    self._sync_actor_lidar_sensors()
 
             def get_sem_img(ego_self, data):
                 array = np.frombuffer(data.raw_data, dtype=np.dtype("uint8"))
