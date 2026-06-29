@@ -12,6 +12,7 @@ CARLA_PORT="${CARLA_PORT:-2000}"
 MAX_RETRIES_PER_BATCH="${MAX_RETRIES_PER_BATCH:-2}"
 NUM_SCENARIO="${NUM_SCENARIO:-1}"
 CAMERA_FPS="${CAMERA_FPS:-10}"
+BATCHES_PER_CARLA_SESSION="${BATCHES_PER_CARLA_SESSION:-3}"
 
 COMMON_ARGS=(
   --agent_cfg expert.yaml
@@ -73,6 +74,12 @@ Example:
   ./run_batches_with_carla_restart.sh train train \
     --yaml-dir /home/ubuntu/baiming/FREA/frea/scenario/config/batches \
     --prefix standard_eval_scenario3_train_batch_
+
+Env vars:
+  OUTPUT_BASE                 Output root directory
+  CARLA_WAIT_SECONDS          Seconds to wait after starting CARLA
+  MAX_RETRIES_PER_BATCH       Retry count for each batch after failures
+  BATCHES_PER_CARLA_SESSION   Number of successful batches to run before restarting CARLA
 EOF
     exit 1
   fi
@@ -115,6 +122,13 @@ EOF
       done < <(find "${yaml_dir}" -maxdepth 1 -type f -name "*.yaml" | sort)
     fi
   else
+    for arg in "$@"; do
+      if [ -d "${arg}" ]; then
+        echo "Directory passed without --yaml-dir: ${arg}"
+        echo "Use: ./run_batches_with_carla_restart.sh <split> <out> --yaml-dir ${arg} [--prefix <prefix>]"
+        exit 1
+      fi
+    done
     scenario_cfgs=("$@")
   fi
 
@@ -125,7 +139,13 @@ EOF
 
   cd "${ROOT_DIR}"
 
+  local session_active=0
+  local successful_batches_in_session=0
+  local total_batches="${#scenario_cfgs[@]}"
+  local batch_counter=0
+
   for scenario_cfg in "${scenario_cfgs[@]}"; do
+    batch_counter=$((batch_counter + 1))
     local batch_name
     batch_name="$(basename "${scenario_cfg}" .yaml)"
     local output_dir="${OUTPUT_BASE}/${output_subdir}/${batch_name}"
@@ -136,30 +156,50 @@ EOF
       echo "============================================================"
       echo "Split: ${split_name}"
       echo "Batch yaml: ${scenario_cfg}"
+      echo "Batch index: ${batch_counter}/${total_batches}"
       echo "Attempt: $((attempt + 1))/$((MAX_RETRIES_PER_BATCH + 1))"
       echo "Output dir: ${output_dir}"
+      echo "CARLA session batch progress: $((successful_batches_in_session + 1))/${BATCHES_PER_CARLA_SESSION}"
       echo "============================================================"
 
-      stop_carla
-      start_carla
+      if [ "${session_active}" -ne 1 ]; then
+        stop_carla
+        start_carla
+        session_active=1
+        successful_batches_in_session=0
+      fi
 
       if run_one_batch "${scenario_cfg}" "${output_dir}"; then
         success=1
+        successful_batches_in_session=$((successful_batches_in_session + 1))
         echo "Batch succeeded: ${scenario_cfg}"
         break
       fi
 
       echo "Batch failed: ${scenario_cfg}"
       attempt=$((attempt + 1))
+      stop_carla
+      session_active=0
     done
 
-    stop_carla
-
     if [ "${success}" -ne 1 ]; then
+      if [ "${session_active}" -eq 1 ]; then
+        stop_carla
+      fi
       echo "Batch permanently failed after retries: ${scenario_cfg}"
       exit 1
     fi
+
+    if [ "${successful_batches_in_session}" -ge "${BATCHES_PER_CARLA_SESSION}" ] && [ "${batch_counter}" -lt "${total_batches}" ]; then
+      echo "Reached ${BATCHES_PER_CARLA_SESSION} successful batches in current CARLA session. Restarting CARLA before next batch."
+      stop_carla
+      session_active=0
+    fi
   done
+
+  if [ "${session_active}" -eq 1 ]; then
+    stop_carla
+  fi
 
   echo "All requested batches finished."
 }
