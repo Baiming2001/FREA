@@ -10,7 +10,9 @@
 import copy
 import json
 import os
+import queue
 import time
+import threading
 import weakref
 
 import numpy as np
@@ -65,15 +67,16 @@ class CarlaEnv(gym.Env):
         self.save_camera_frames = env_params.get('save_camera_frames', False)
         self.camera_only = env_params.get('camera_only', False)
         self.camera_fps = env_params.get('camera_fps', 10)
-        default_camera_width = 960 if self.camera_only else 1600
-        default_camera_height = 540 if self.camera_only else 900
-        default_camera_quality = 80 if self.camera_only else 90
+        default_camera_width = 1600
+        default_camera_height = 900
+        default_camera_quality = 90
         self.camera_export_width = env_params.get('camera_export_width', default_camera_width)
         self.camera_export_height = env_params.get('camera_export_height', default_camera_height)
         self.camera_export_format = str(env_params.get('camera_export_format', 'jpg')).lower()
         self.camera_export_quality = env_params.get('camera_export_quality', default_camera_quality)
         self.camera_export_optimize = env_params.get('camera_export_optimize', False)
         self.save_actor_lidar_frames = env_params.get('save_actor_lidar_frames', not self.camera_only)
+        self.camera_export_queue_size = int(env_params.get('camera_export_queue_size', 1024))
         self.fixed_delta_seconds = env_params.get('fixed_delta_seconds', 0.1)
         self.capture_stride = max(1, round((1 / self.fixed_delta_seconds) / self.camera_fps))
         self.output_dir = env_params.get('output_dir')
@@ -103,6 +106,10 @@ class CarlaEnv(gym.Env):
         self.actor_lidar_sensors = {}
         self.actor_lidar_points = {}
         self.lidar_actor_ids = {}
+        self.export_queue = None
+        self.export_worker = None
+        self.export_stop_token = object()
+        self.export_worker_error = None
         self.metadata_actor_roles = ['ego', 'leading', 'other']
         self.camera_actor_roles = ['ego', 'other']
         self.draw_debug_overlays = env_params.get('draw_debug_overlays', False)
@@ -143,6 +150,76 @@ class CarlaEnv(gym.Env):
         self.warm_up_steps = env_params['warm_up_steps']
 
         self.obs_size = int(self.obs_range / self.lidar_bin)
+        self._ensure_export_worker()
+
+    def _ensure_export_worker(self):
+        if not self.save_camera_frames:
+            return
+        if self.export_queue is None:
+            self.export_queue = queue.Queue(maxsize=self.camera_export_queue_size)
+        if self.export_worker is not None and self.export_worker.is_alive():
+            return
+
+        self.export_worker_error = None
+        self.export_worker = threading.Thread(
+            target=self._export_worker_loop,
+            name=f'carla-export-env-{id(self)}',
+            daemon=True
+        )
+        self.export_worker.start()
+
+    def _export_worker_loop(self):
+        while True:
+            job = self.export_queue.get()
+            try:
+                if job is self.export_stop_token:
+                    return
+
+                job_type = job['type']
+                if job_type == 'image':
+                    image = Image.fromarray(job['array'])
+                    if job['frame_ext'] in ('jpg', 'jpeg'):
+                        image.save(
+                            job['path'],
+                            format='JPEG',
+                            quality=int(job['quality']),
+                            optimize=bool(job['optimize'])
+                        )
+                    else:
+                        image.save(job['path'])
+                elif job_type == 'npy':
+                    np.save(job['path'], job['array'])
+                else:
+                    raise ValueError(f"Unsupported export job type: {job_type}")
+            except Exception as exc:
+                self.export_worker_error = exc
+                if self.logger is not None:
+                    self.logger.log(f'>> Camera export worker error: {exc}', color='red')
+            finally:
+                self.export_queue.task_done()
+
+    def _queue_export_job(self, job):
+        self._ensure_export_worker()
+        if self.export_worker_error is not None:
+            raise RuntimeError(f'Camera export worker failed: {self.export_worker_error}')
+        self.export_queue.put(job)
+
+    def _flush_export_jobs(self):
+        if self.export_queue is None:
+            return
+        self.export_queue.join()
+        if self.export_worker_error is not None:
+            raise RuntimeError(f'Camera export worker failed: {self.export_worker_error}')
+
+    def _shutdown_export_worker(self):
+        if self.export_queue is None:
+            return
+        self._flush_export_jobs()
+        self.export_queue.put(self.export_stop_token)
+        if self.export_worker is not None:
+            self.export_worker.join(timeout=10.0)
+        self.export_worker = None
+        self.export_queue = None
 
     def _apply_collision_target_ego_override(self, throttle, steer, brake):
         if self.config is None or self.config.scenario_id != 3 or self.config.parameters is None:
@@ -651,17 +728,15 @@ class CarlaEnv(gym.Env):
             for view_name, image_array in role_images.items():
                 view_dir = os.path.join(base_dir, role_name, view_name)
                 os.makedirs(view_dir, exist_ok=True)
-                image = Image.fromarray(image_array)
                 save_path = os.path.join(view_dir, frame_name)
-                if frame_ext in ('jpg', 'jpeg'):
-                    image.save(
-                        save_path,
-                        format='JPEG',
-                        quality=int(self.camera_export_quality),
-                        optimize=bool(self.camera_export_optimize)
-                    )
-                else:
-                    image.save(save_path)
+                self._queue_export_job({
+                    'type': 'image',
+                    'path': save_path,
+                    'array': image_array.copy(),
+                    'frame_ext': frame_ext,
+                    'quality': self.camera_export_quality,
+                    'optimize': self.camera_export_optimize,
+                })
         self.front_camera_frame_idx += 1
 
     def _save_actor_lidar_frame(self):
@@ -686,7 +761,11 @@ class CarlaEnv(gym.Env):
                 continue
             lidar_dir = os.path.join(base_dir, role_name, 'lidar')
             os.makedirs(lidar_dir, exist_ok=True)
-            np.save(os.path.join(lidar_dir, frame_name), point_cloud)
+            self._queue_export_job({
+                'type': 'npy',
+                'path': os.path.join(lidar_dir, frame_name),
+                'array': point_cloud.copy(),
+            })
 
     def reset(self, config, env_id):
         self.config = config
@@ -1273,6 +1352,7 @@ class CarlaEnv(gym.Env):
         }
 
     def clean_up(self):
+        self._flush_export_jobs()
         self._write_scene_result()
 
         # remove the render sensor only when evaluating
