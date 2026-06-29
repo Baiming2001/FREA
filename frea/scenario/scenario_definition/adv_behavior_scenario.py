@@ -15,7 +15,6 @@ from frea.gym_carla.envs.utils import calculate_abs_velocity
 from frea.scenario.tools.scenario_operation import ScenarioOperation
 from frea.scenario.scenario_manager.carla_data_provider import CarlaDataProvider
 from frea.scenario.scenario_definition.basic_scenario import BasicScenario
-from frea.scenario.tools.scenario_utils import calculate_distance_transforms
 
 
 class AdvBehaviorSingle(BasicScenario):
@@ -48,27 +47,56 @@ class AdvBehaviorSingle(BasicScenario):
         self.scenario_operation = ScenarioOperation(fixed_delta_seconds=self.fixed_delta_seconds)
         self.special_actors = {}
         self.special_actor_indices = {}
+        self.special_actor_routes = {}
+        self.special_actor_route_indices = {}
         self.scripted_parameters = {}
         self.script_step = 0
         self.stop_hold_steps = 0
         self.should_terminate = False
 
-    def set_special_actors(self, special_actors, scripted_parameters=None):
+    def set_special_actors(self, special_actors, scripted_parameters=None, special_actor_routes=None):
         self.special_actors = special_actors or {}
         self.scripted_parameters = scripted_parameters or {}
+        self.special_actor_routes = special_actor_routes or {}
         actor_list = [actor for actor in self.special_actors.values() if actor is not None]
         self.scenario_operation.other_actors = actor_list
         self.scenario_operation.vehicle_controller = {}
         self.scenario_operation._init_vehicle_controller()
         self.special_actor_indices = {}
+        self.special_actor_route_indices = {}
         self.script_step = 0
         self.stop_hold_steps = 0
         self.should_terminate = False
         for index, (role_name, actor) in enumerate(self.special_actors.items()):
             if actor is not None:
                 self.special_actor_indices[role_name] = index
+                self.special_actor_route_indices[role_name] = 0
+
+    def _follow_route_with_pid(self, role_name, target_speed, lookahead_steps=8, reach_threshold_m=4.0):
+        actor = self.special_actors.get(role_name)
+        actor_index = self.special_actor_indices.get(role_name)
+        route = self.special_actor_routes.get(role_name) or []
+        if actor is None or actor_index is None or not route:
+            return False
+
+        actor_location = CarlaDataProvider.get_location(actor)
+        route_index = self.special_actor_route_indices.get(role_name, 0)
+
+        while route_index < len(route) - 1:
+            distance_to_current = actor_location.distance(route[route_index].location)
+            if distance_to_current > reach_threshold_m:
+                break
+            route_index += 1
+
+        self.special_actor_route_indices[role_name] = route_index
+        target_index = min(route_index + lookahead_steps, len(route) - 1)
+        self.scenario_operation.drive_to_target_followlane(actor_index, route[target_index], target_speed)
+        return True
 
     def _follow_lane_with_pid(self, role_name, target_speed, lookahead_distance=8.0):
+        if self._follow_route_with_pid(role_name, target_speed):
+            return
+
         actor = self.special_actors.get(role_name)
         actor_index = self.special_actor_indices.get(role_name)
         if actor is None or actor_index is None:

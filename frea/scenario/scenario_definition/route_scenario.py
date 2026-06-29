@@ -310,6 +310,38 @@ class RouteScenario():
         CarlaDataProvider.set_special_actor(self.ego_vehicle, role_name, actor)
         return actor
 
+    def _build_special_actor_route(self, actor_waypoint, min_remaining_points=20):
+        if actor_waypoint is None or not self.route:
+            return []
+
+        actor_location = actor_waypoint.transform.location
+        actor_forward = actor_waypoint.transform.get_forward_vector()
+        best_index = None
+        best_distance = float('inf')
+
+        for index, (route_transform, _) in enumerate(self.route):
+            route_location = route_transform.location
+            relative_x = route_location.x - actor_location.x
+            relative_y = route_location.y - actor_location.y
+            longitudinal_projection = relative_x * actor_forward.x + relative_y * actor_forward.y
+
+            # Keep the actor on its forward path instead of snapping to points behind it.
+            if longitudinal_projection < -2.0:
+                continue
+
+            distance = route_location.distance(actor_location)
+            if distance < best_distance:
+                best_distance = distance
+                best_index = index
+
+        if best_index is None:
+            return []
+
+        remaining_route = [route_transform for route_transform, _ in self.route[best_index:]]
+        if len(remaining_route) < min_remaining_points:
+            return []
+        return remaining_route
+
     def _initialize_scenario3_actors(self):
         scenario_params = self._get_scenario_parameters()
         carla_map = self.world.get_map()
@@ -326,7 +358,11 @@ class RouteScenario():
 
         self._spawn_special_actor('leading', leading_waypoint.transform, 'vehicle.tesla.model3')
         self._spawn_special_actor('other', other_waypoint.transform, 'vehicle.audi.tt')
-        self.scenario_instance.set_special_actors(self.special_actors, scenario_params)
+
+        special_actor_routes = {
+            'leading': self._build_special_actor_route(leading_waypoint),
+        }
+        self.scenario_instance.set_special_actors(self.special_actors, scenario_params, special_actor_routes)
 
     def _global_route_to_waypoints(self):
         waypoints_list = []
