@@ -151,6 +151,38 @@ class Logger:
         self.eval_records = {map_name: {} for map_name in self.all_map_name}
         self.record_file = {}
         self.result_file = {}
+        self.progress_file = os.path.join(self.output_dir, 'progress.json')
+        self.completed_data_ids = {map_name: [] for map_name in self.all_map_name}
+        self._load_progress()
+
+    def _load_progress(self):
+        if not os.path.exists(self.progress_file):
+            return
+        try:
+            with open(self.progress_file, 'r', encoding='utf-8') as progress_handle:
+                progress = json.load(progress_handle)
+            completed = progress.get('completed_data_ids', {})
+            for map_name in self.all_map_name:
+                existing_ids = completed.get(map_name, [])
+                self.completed_data_ids[map_name] = sorted(set(existing_ids))
+            self.log(f'>> Loaded progress from {self.progress_file}', 'yellow')
+        except Exception as exc:
+            self.log(f'>> Failed to load progress file {self.progress_file}: {exc}', 'red')
+
+    def _save_progress(self):
+        progress = {
+            'completed_data_ids': self.completed_data_ids
+        }
+        with open(self.progress_file, 'w', encoding='utf-8') as progress_handle:
+            json.dump(progress, progress_handle, indent=2)
+
+    def mark_data_ids_completed(self, map_name, data_ids):
+        if map_name not in self.completed_data_ids:
+            self.completed_data_ids[map_name] = []
+        merged = set(self.completed_data_ids[map_name])
+        merged.update(int(data_id) for data_id in data_ids)
+        self.completed_data_ids[map_name] = sorted(merged)
+        self._save_progress()
 
     def create_eval_dir(self, load_existing_results, scenario_id):
         scenario_name = "all" if scenario_id is None else 'Scenario' + str(scenario_id)

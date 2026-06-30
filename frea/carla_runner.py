@@ -414,6 +414,12 @@ class CarlaRunner:
             self.logger.log(f'[{num_finished_scenario}/{data_loader.num_total_scenario}] Ranking scores (rewards) for batch scenario:', 'yellow')
             for s_i in score_list.keys():
                 self.logger.log('\t Env id ' + str(s_i) + ': ' + str(np.mean(score_list[s_i])), 'yellow')
+            completed_data_ids = [config.data_id for config in sampled_scenario_configs]
+            self.logger.mark_data_ids_completed(self.current_map, completed_data_ids)
+            self.logger.log(
+                f'>> Recorded progress for {self.current_map}: completed data_ids {completed_data_ids}',
+                'yellow'
+            )
 
             # calculate evaluation results
             if self.eval_mode == 'analysis':

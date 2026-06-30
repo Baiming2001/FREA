@@ -101,7 +101,13 @@ def scenario_parse(config, logger):
             data_full = [item for item in data_full if item["data_id"] == config['data_id']]
 
     logger.log(f'>> Loading {len(data_full)} data')
-    data_full = [item for item in data_full if item["data_id"] not in [key for subdict in logger.eval_records.values() for key in subdict.keys()]]
+    completed_data_ids = set()
+    for subdict in logger.eval_records.values():
+        completed_data_ids.update(subdict.keys())
+    if hasattr(logger, 'completed_data_ids'):
+        for data_ids in logger.completed_data_ids.values():
+            completed_data_ids.update(data_ids)
+    data_full = [item for item in data_full if item["data_id"] not in completed_data_ids]
     logger.log(f'>> Parsing {len(data_full)} unfinished data')
 
     config_by_map = {}
