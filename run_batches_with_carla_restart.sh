@@ -13,6 +13,7 @@ MAX_RETRIES_PER_BATCH="${MAX_RETRIES_PER_BATCH:-2}"
 NUM_SCENARIO="${NUM_SCENARIO:-1}"
 CAMERA_FPS="${CAMERA_FPS:-10}"
 BATCHES_PER_CARLA_SESSION="${BATCHES_PER_CARLA_SESSION:-3}"
+MANAGE_CARLA="${MANAGE_CARLA:-0}"
 
 COMMON_ARGS=(
   --agent_cfg expert.yaml
@@ -48,6 +49,21 @@ stop_carla() {
   sleep 5
 }
 
+ensure_carla_session() {
+  if [ "${MANAGE_CARLA}" != "1" ]; then
+    return
+  fi
+  stop_carla
+  start_carla
+}
+
+shutdown_carla_session() {
+  if [ "${MANAGE_CARLA}" != "1" ]; then
+    return
+  fi
+  stop_carla
+}
+
 run_one_batch() {
   local scenario_cfg="$1"
   local output_dir="$2"
@@ -77,6 +93,7 @@ Example:
 
 Env vars:
   OUTPUT_BASE                 Output root directory
+  MANAGE_CARLA                Set to 1 to auto start/stop CARLA. Default 0.
   CARLA_WAIT_SECONDS          Seconds to wait after starting CARLA
   MAX_RETRIES_PER_BATCH       Retry count for each batch after failures
   BATCHES_PER_CARLA_SESSION   Number of successful batches to run before restarting CARLA
@@ -163,8 +180,7 @@ EOF
       echo "============================================================"
 
       if [ "${session_active}" -ne 1 ]; then
-        stop_carla
-        start_carla
+        ensure_carla_session
         session_active=1
         successful_batches_in_session=0
       fi
@@ -178,13 +194,13 @@ EOF
 
       echo "Batch failed: ${scenario_cfg}"
       attempt=$((attempt + 1))
-      stop_carla
+      shutdown_carla_session
       session_active=0
     done
 
     if [ "${success}" -ne 1 ]; then
       if [ "${session_active}" -eq 1 ]; then
-        stop_carla
+        shutdown_carla_session
       fi
       echo "Batch permanently failed after retries: ${scenario_cfg}"
       exit 1
@@ -192,13 +208,13 @@ EOF
 
     if [ "${successful_batches_in_session}" -ge "${BATCHES_PER_CARLA_SESSION}" ] && [ "${batch_counter}" -lt "${total_batches}" ]; then
       echo "Reached ${BATCHES_PER_CARLA_SESSION} successful batches in current CARLA session. Restarting CARLA before next batch."
-      stop_carla
+      shutdown_carla_session
       session_active=0
     fi
   done
 
   if [ "${session_active}" -eq 1 ]; then
-    stop_carla
+    shutdown_carla_session
   fi
 
   echo "All requested batches finished."
