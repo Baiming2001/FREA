@@ -10,6 +10,7 @@
 
 import traceback
 import os.path as osp
+import sys
 
 import torch 
 
@@ -107,3 +108,5 @@ if __name__ == '__main__':
     for err in err_list:
         print(err[0], err[1], 'failed!')
         print(err[2])
+    if err_list:
+        sys.exit(1)
