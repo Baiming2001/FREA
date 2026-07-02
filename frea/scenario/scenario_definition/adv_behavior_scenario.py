@@ -53,6 +53,7 @@ class AdvBehaviorSingle(BasicScenario):
         self.script_step = 0
         self.stop_hold_steps = 0
         self.should_terminate = False
+        self.script_state = {}
 
     def set_special_actors(self, special_actors, scripted_parameters=None, special_actor_routes=None):
         self.special_actors = special_actors or {}
@@ -67,10 +68,19 @@ class AdvBehaviorSingle(BasicScenario):
         self.script_step = 0
         self.stop_hold_steps = 0
         self.should_terminate = False
+        self.script_state = {}
         for index, (role_name, actor) in enumerate(self.special_actors.items()):
             if actor is not None:
                 self.special_actor_indices[role_name] = index
                 self.special_actor_route_indices[role_name] = 0
+
+    def _build_location_from_parameters(self, prefix):
+        x = self.scripted_parameters.get(f'{prefix}_x')
+        y = self.scripted_parameters.get(f'{prefix}_y')
+        z = self.scripted_parameters.get(f'{prefix}_z')
+        if x is None or y is None:
+            return None
+        return carla.Location(x=float(x), y=float(y), z=float(z or 0.0))
 
     def _follow_route_with_pid(self, role_name, target_speed, lookahead_steps=8, reach_threshold_m=4.0):
         actor = self.special_actors.get(role_name)
@@ -124,6 +134,11 @@ class AdvBehaviorSingle(BasicScenario):
         if not self.special_actors:
             return
 
+        if int(self.scripted_parameters.get('scenario_type_id', -1)) == 2:
+            self._update_scenario2_special_actors()
+            self.script_step += 1
+            return
+
         leading_speed = self.scripted_parameters.get('leading_target_speed_mps', 7.0)
         other_base_speed = self.scripted_parameters.get('other_target_speed_mps', 7.0)
         brake_after_seconds = self.scripted_parameters.get('leading_brake_after_seconds', 3.0)
@@ -172,6 +187,49 @@ class AdvBehaviorSingle(BasicScenario):
             self.should_terminate = False
 
         self.script_step += 1
+
+    def _update_scenario2_special_actors(self):
+        other_actor = self.special_actors.get('other')
+        if other_actor is None:
+            self.should_terminate = False
+            return
+
+        trigger_location = self._build_location_from_parameters('trigger_position')
+        if trigger_location is None:
+            target_speed = self.scripted_parameters.get('other_target_speed_mps', 8.0)
+            lookahead_distance = self.scripted_parameters.get('other_lookahead_distance_m', 12.0)
+            self._follow_lane_with_pid('other', target_speed, lookahead_distance=lookahead_distance)
+            self.should_terminate = False
+            return
+
+        release_distance = float(self.scripted_parameters.get('other_release_distance_m', 20.0))
+        clear_distance = float(self.scripted_parameters.get('other_clear_distance_m', 22.0))
+        ego_clear_distance = float(self.scripted_parameters.get('ego_clear_distance_m', 18.0))
+        base_speed = float(self.scripted_parameters.get('other_target_speed_mps', 8.0))
+        speed_variation = float(self.scripted_parameters.get('other_speed_variation_mps', 0.15))
+        lookahead_distance = float(self.scripted_parameters.get('other_lookahead_distance_m', 12.0))
+
+        ego_location = CarlaDataProvider.get_location(self.ego_vehicle)
+        other_location = CarlaDataProvider.get_location(other_actor)
+        ego_distance_to_trigger = ego_location.distance(trigger_location)
+        other_distance_to_trigger = other_location.distance(trigger_location)
+
+        released = self.script_state.get('scenario2_other_released', False)
+        if not released and ego_distance_to_trigger <= release_distance:
+            released = True
+            self.script_state['scenario2_other_released'] = True
+
+        if released:
+            target_speed = self._get_speed_with_variation(base_speed, speed_variation)
+            self._follow_lane_with_pid('other', target_speed, lookahead_distance=lookahead_distance)
+        else:
+            self.scenario_operation.brake(other_actor)
+
+        self.should_terminate = (
+            released
+            and other_distance_to_trigger >= clear_distance
+            and ego_distance_to_trigger >= ego_clear_distance
+        )
 
     def should_terminate_episode(self):
         return getattr(self, 'should_terminate', False)

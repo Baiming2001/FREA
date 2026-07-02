@@ -72,6 +72,46 @@ class RouteScenario():
 
     def _get_scenario_parameters(self):
         parameters = copy.deepcopy(self.config.parameters) if self.config.parameters is not None else {}
+        if self.config.scenario_id == 2:
+            scenario_description = getattr(self.config, 'scenario_description', None) or {}
+            trigger_position = scenario_description.get('trigger_position') or {}
+            scenario2_defaults = {
+                'target_outcome': 'normal',
+                'scenario_type_id': 2,
+                'other_actor_source': 'left',
+                'other_vehicle_model': 'vehicle.audi.tt',
+                'other_target_speed_mps': 8.0,
+                'other_speed_variation_mps': 0.15,
+                'other_release_distance_m': 24.0,
+                'other_clear_distance_m': 22.0,
+                'ego_clear_distance_m': 18.0,
+                'scene_end_after_stop_seconds': 0.5,
+                'trigger_position_x': trigger_position.get('x'),
+                'trigger_position_y': trigger_position.get('y'),
+                'trigger_position_z': trigger_position.get('z'),
+            }
+            outcome_profiles = {
+                'collision': {
+                    'other_target_speed_mps': 10.5,
+                    'other_speed_variation_mps': 0.05,
+                    'other_release_distance_m': 10.0,
+                    'other_clear_distance_m': 24.0,
+                    'ego_clear_distance_m': 20.0,
+                },
+                'normal': {
+                    'other_target_speed_mps': 8.0,
+                    'other_speed_variation_mps': 0.15,
+                    'other_release_distance_m': 24.0,
+                    'other_clear_distance_m': 22.0,
+                    'ego_clear_distance_m': 18.0,
+                },
+            }
+            target_outcome = str(parameters.get('target_outcome', scenario2_defaults['target_outcome'])).lower()
+            scenario2_defaults.update(outcome_profiles.get(target_outcome, {}))
+            scenario2_defaults.update(parameters)
+            scenario2_defaults['target_outcome'] = target_outcome
+            self.config.parameters = copy.deepcopy(scenario2_defaults)
+            return scenario2_defaults
         if self.config.scenario_id == 3:
             scenario3_defaults = {
                 'target_outcome': 'near_miss',
@@ -310,6 +350,42 @@ class RouteScenario():
         CarlaDataProvider.set_special_actor(self.ego_vehicle, role_name, actor)
         return actor
 
+    def _choose_scenario2_actor_transform(self, scenario_params):
+        scenario_description = getattr(self.config, 'scenario_description', None) or {}
+        other_actors = scenario_description.get('other_actors') or {}
+        source_preference = []
+        preferred_source = str(scenario_params.get('other_actor_source', 'left')).lower()
+        if preferred_source:
+            source_preference.append(preferred_source)
+        for fallback_source in ('left', 'front', 'right'):
+            if fallback_source not in source_preference:
+                source_preference.append(fallback_source)
+
+        for source_name in source_preference:
+            actor_configs = other_actors.get(source_name) or []
+            if actor_configs:
+                return source_name, actor_configs[0]
+        return None, None
+
+    def _initialize_scenario2_actors(self):
+        scenario_params = self._get_scenario_parameters()
+        source_name, actor_config = self._choose_scenario2_actor_transform(scenario_params)
+        if actor_config is None:
+            self.logger.log('>> Scenario 2 has no matched other_actor template, skip scripted crossing actor', color='yellow')
+            return
+
+        actor_transform = carla.Transform(
+            location=carla.Location(
+                x=float(actor_config['x']),
+                y=float(actor_config['y']),
+                z=float(actor_config['z'])
+            ),
+            rotation=carla.Rotation(yaw=float(actor_config['yaw']))
+        )
+        self._spawn_special_actor('other', actor_transform, scenario_params['other_vehicle_model'])
+        scenario_params['other_actor_source'] = source_name
+        self.scenario_instance.set_special_actors(self.special_actors, scenario_params, {})
+
     def _build_special_actor_route(self, actor_waypoint, min_remaining_points=20):
         if actor_waypoint is None or not self.route:
             return []
@@ -451,6 +527,8 @@ class RouteScenario():
         return amount, spawn_points
 
     def initialize_actors(self):
+        if self.config.scenario_id == 2:
+            self._initialize_scenario2_actors()
         if self.config.scenario_id == 3:
             self._initialize_scenario3_actors()
 
@@ -534,9 +612,9 @@ class RouteScenario():
         elif self.config.scenario_id == 3:
             self.post_collision_steps = 0
 
-        if self.config.scenario_id == 3 and self.scenario_instance.should_terminate_episode():
+        if self.config.scenario_id in (2, 3) and self.scenario_instance.should_terminate_episode():
             ego_stop = True
-            self.logger.log('>> Scenario stops because leading and ego vehicles have both settled after braking', color='yellow')
+            self.logger.log('>> Scenario stops because scripted actors completed the intended interaction', color='yellow')
 
         if running_status['current_game_time'] >= self.timeout:
             ego_stop = True

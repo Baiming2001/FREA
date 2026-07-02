@@ -25,6 +25,7 @@ class ScenarioConfig(object):
     route_id = 0
     risk_level = 0
     parameters = None
+    scenario_description = None
 
     town = ''
     name = ''

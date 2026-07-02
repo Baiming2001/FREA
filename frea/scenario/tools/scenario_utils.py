@@ -13,6 +13,7 @@ import os.path as osp
 import math
 import json
 import random
+import copy
 
 import carla
 import xml.etree.ElementTree as ET
@@ -73,6 +74,42 @@ def calculate_distance_locations(location_1, location_2):
     return math.sqrt(distance_x + distance_y)
 
 
+def _match_scenario_description_to_route(route_waypoints, scenario_file, town_name):
+    if not scenario_file or not os.path.exists(scenario_file):
+        return None
+
+    world_annotations = RouteParser.parse_annotations_file(scenario_file)
+    town_scenarios = world_annotations.get(town_name, [])
+    if not town_scenarios:
+        return None
+
+    best_description = None
+    best_distance = float('inf')
+    for scenario in town_scenarios:
+        scenario_name = scenario.get('scenario_name')
+        for event in scenario.get('available_event_configurations', []):
+            trigger = copy.deepcopy(event.get('transform'))
+            if trigger is None:
+                continue
+            RouteParser.convert_waypoint_float(trigger)
+            for route_waypoint in route_waypoints:
+                dx = route_waypoint.x - trigger['x']
+                dy = route_waypoint.y - trigger['y']
+                dz = route_waypoint.z - trigger['z']
+                distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+                if distance < best_distance:
+                    best_distance = distance
+                    best_description = {
+                        'name': scenario_name,
+                        'other_actors': copy.deepcopy(event.get('other_actors')),
+                        'trigger_position': trigger,
+                    }
+
+    if best_distance > TRIGGER_THRESHOLD:
+        return None
+    return best_description
+
+
 def scenario_parse(config, logger):
     """
         Data file should also come from args
@@ -128,6 +165,11 @@ def scenario_parse(config, logger):
         parsed_config.route_id = item['route_id']
         parsed_config.risk_level = item['risk_level']
         parsed_config.parameters = item['parameters']
+        parsed_config.scenario_description = _match_scenario_description_to_route(
+            parsed_config.trajectory,
+            scenario_file,
+            parsed_config.town
+        )
         # parse the template directory from .yaml config of scenarios
         if 'texture_dir' in config.keys():
             parsed_config.texture_dir = config['texture_dir']
