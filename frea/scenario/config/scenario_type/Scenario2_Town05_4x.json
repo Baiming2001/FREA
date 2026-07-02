@@ -1,0 +1,46 @@
+[
+    {
+        "data_id": 0,
+        "scenario_id": 2,
+        "route_id": 4,
+        "risk_level": null,
+        "parameters": {
+            "scenario_type_id": 2,
+            "scenario_subtype_id": 1,
+            "target_outcome": "normal"
+        }
+    },
+    {
+        "data_id": 1,
+        "scenario_id": 2,
+        "route_id": 6,
+        "risk_level": null,
+        "parameters": {
+            "scenario_type_id": 2,
+            "scenario_subtype_id": 1,
+            "target_outcome": "normal"
+        }
+    },
+    {
+        "data_id": 2,
+        "scenario_id": 2,
+        "route_id": 11,
+        "risk_level": null,
+        "parameters": {
+            "scenario_type_id": 2,
+            "scenario_subtype_id": 1,
+            "target_outcome": "collision"
+        }
+    },
+    {
+        "data_id": 3,
+        "scenario_id": 2,
+        "route_id": 13,
+        "risk_level": null,
+        "parameters": {
+            "scenario_type_id": 2,
+            "scenario_subtype_id": 1,
+            "target_outcome": "collision"
+        }
+    }
+]

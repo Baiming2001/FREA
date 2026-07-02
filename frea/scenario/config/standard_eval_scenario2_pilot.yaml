@@ -1,0 +1,25 @@
+scenario_type_dir: 'frea/scenario/config/scenario_type'
+scenario_type: 'Scenario2_Town05_4x.json'
+policy_type: 'standard'
+learnable: False
+feasibility: False
+reward_shaping: False
+
+route_dir: 'frea/scenario/scenario_data/route'
+scenario_id: 2
+route_id: null
+
+model_path: ''
+standard_action: False
+buffer_capacity: 100
+
+save_freq: 20
+train_episode:
+  Town05: 2000
+gamma: 0.99
+max_episode_step: 100
+warm_up_steps: 2
+traffic_intensity: 0.2
+client_timeout: 60.0
+world_load_retries: 3
+world_load_retry_wait: 10.0
