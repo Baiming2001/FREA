@@ -221,6 +221,8 @@ class AdvBehaviorSingle(BasicScenario):
             other_min_follow_distance = float(self.scripted_parameters.get('other_min_follow_distance_m', 8.0))
             other_match_speed_gain = float(self.scripted_parameters.get('other_match_speed_gain', 0.6))
             other_close_speed_penalty = float(self.scripted_parameters.get('other_close_speed_penalty_mps', 0.6))
+            other_start_boost = float(self.scripted_parameters.get('other_start_boost_mps', 2.5))
+            other_start_boost_speed_threshold = float(self.scripted_parameters.get('other_start_boost_speed_threshold_mps', 3.0))
             scene_end_after_stop_seconds = float(self.scripted_parameters.get('scene_end_after_stop_seconds', 0.5))
             hold_steps_needed = max(1, int(scene_end_after_stop_seconds / self.fixed_delta_seconds))
 
@@ -252,12 +254,18 @@ class AdvBehaviorSingle(BasicScenario):
             if other_actor is not None:
                 other_location = CarlaDataProvider.get_location(other_actor)
                 other_distance_to_ego = other_location.distance(ego_location)
+                other_speed = calculate_abs_velocity(CarlaDataProvider.get_velocity(other_actor))
                 speed_gap = ego_speed - other_base_speed
                 matched_speed = other_base_speed + max(0.0, speed_gap) * other_match_speed_gain
                 if other_distance_to_ego <= other_min_follow_distance:
                     target_other_speed = max(0.0, ego_speed - other_close_speed_penalty)
                 else:
                     target_other_reference_speed = min(max(other_base_speed, matched_speed), ego_speed + 0.5)
+                    if other_speed < other_start_boost_speed_threshold and ego_speed > other_speed:
+                        target_other_reference_speed = max(
+                            target_other_reference_speed,
+                            min(ego_speed + 1.0, other_speed + other_start_boost)
+                        )
                     target_other_speed = self._get_speed_with_variation(
                         target_other_reference_speed,
                         other_speed_variation

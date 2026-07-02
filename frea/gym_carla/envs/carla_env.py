@@ -238,6 +238,22 @@ class CarlaEnv(gym.Env):
         if target_outcome != 'collision':
             return throttle, steer, brake
 
+        if scenario_type_id == 2:
+            force_no_brake_distance = float(parameters.get('ego_force_no_brake_distance_m', 0.0))
+            leading_actor = self._get_camera_target_actor('leading')
+            if leading_actor is not None and force_no_brake_distance > 0.0:
+                try:
+                    ego_location = CarlaDataProvider.get_location(self.ego_vehicle)
+                    leading_location = CarlaDataProvider.get_location(leading_actor)
+                    if ego_location is not None and leading_location is not None:
+                        leading_distance = ego_location.distance(leading_location)
+                        if leading_distance <= force_no_brake_distance:
+                            throttle = max(float(throttle), float(parameters.get('ego_min_throttle_during_delay', 0.0)))
+                            brake = 0.0
+                            return throttle, steer, brake
+                except RuntimeError:
+                    pass
+
         if scenario_type_id == 3:
             trigger_after_seconds = float(parameters.get('leading_brake_after_seconds', 0.0))
         else:
