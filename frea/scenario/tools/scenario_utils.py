@@ -124,7 +124,7 @@ def scenario_parse(config, logger):
     scenario_file_formatter = osp.join(ROOT_DIR, config['route_dir'], 'scenarios/scenario_%02d.json')
 
     # scenario_id, method, route_id, risk_level
-    with open(list_of_scenario_config, 'r') as f:
+    with open(list_of_scenario_config, 'r', encoding='utf-8-sig') as f:
         data_full = json.loads(f.read())  # one specific type of generation method (safebench_scenario_10x.json)
         # filter the list if any parameter is specified
         if config['scenario_id'] is not None:
