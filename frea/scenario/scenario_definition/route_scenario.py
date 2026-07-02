@@ -101,6 +101,7 @@ class RouteScenario():
                 'leading_lookahead_distance_m': 10.0,
                 'leading_min_travel_distance_m': 14.0,
                 'other_distance_back_m': 10.0,
+                'other_use_adjacent_lane': True,
                 'other_target_speed_mps': 8.0,
                 'other_speed_variation_mps': 0.1,
                 'other_min_follow_distance_m': 8.0,
@@ -121,11 +122,12 @@ class RouteScenario():
             }
             outcome_profiles = {
                 'collision': {
-                    'leading_release_distance_m': 5.5,
+                    'leading_release_distance_m': 11.0,
                     'leading_target_speed_mps': 7.5,
                     'leading_post_merge_speed_mps': 4.5,
                     'leading_lookahead_distance_m': 6.0,
                     'leading_min_travel_distance_m': 8.0,
+                    'other_use_adjacent_lane': True,
                     'other_target_speed_mps': 9.0,
                     'other_speed_variation_mps': 0.03,
                     'other_follow_speed_offset_mps': 0.8,
@@ -145,6 +147,7 @@ class RouteScenario():
                     'leading_target_speed_mps': 8.0,
                     'leading_post_merge_speed_mps': 9.0,
                     'leading_min_travel_distance_m': 16.0,
+                    'other_use_adjacent_lane': True,
                     'other_target_speed_mps': 7.5,
                     'other_speed_variation_mps': 0.1,
                     'other_follow_speed_offset_mps': 0.0,
@@ -455,12 +458,19 @@ class RouteScenario():
             if ego_start_waypoint is None:
                 raise RuntimeError('Failed to resolve custom Scenario 2 ego start waypoint')
 
-            other_waypoint = self._resolve_scenario3_other_waypoint(ego_start_waypoint, scenario_params)
+            if scenario_params.get('other_use_adjacent_lane', False):
+                other_waypoint = self._resolve_scenario3_other_waypoint(ego_start_waypoint, scenario_params)
+            else:
+                other_waypoint = self._get_same_lane_rear_waypoint(
+                    ego_start_waypoint,
+                    scenario_params['other_distance_back_m']
+                )
+                if other_waypoint is None:
+                    raise RuntimeError('Failed to place custom Scenario 2 other vehicle behind ego on the same lane')
             self._spawn_special_actor('leading', roadside_transform, scenario_params['leading_vehicle_model'])
             self._spawn_special_actor('other', other_waypoint.transform, scenario_params['other_vehicle_model'])
             special_actor_routes = {
                 'leading': self._build_special_actor_route(anchor_waypoint),
-                'other': self._build_special_actor_route(other_waypoint),
             }
             self.scenario_instance.set_special_actors(self.special_actors, scenario_params, special_actor_routes)
             return
