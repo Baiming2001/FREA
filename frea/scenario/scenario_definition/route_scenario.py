@@ -70,49 +70,67 @@ class RouteScenario():
         self.criteria = self._create_criteria()
         self.scenario_instance = AdvBehaviorSingle(self.world, self.ego_vehicle, env_params)  # create the scenario instance
 
+    def _get_custom_scenario_type_id(self):
+        parameters = getattr(self.config, 'parameters', None) or {}
+        scenario_type_id = parameters.get('scenario_type_id')
+        if scenario_type_id is None:
+            return self.config.scenario_id
+        try:
+            return int(scenario_type_id)
+        except (TypeError, ValueError):
+            return self.config.scenario_id
+
+    def _is_custom_scenario_type(self, scenario_type_id):
+        return self._get_custom_scenario_type_id() == scenario_type_id
+
     def _get_scenario_parameters(self):
         parameters = copy.deepcopy(self.config.parameters) if self.config.parameters is not None else {}
-        if self.config.scenario_id == 2:
+        if self._is_custom_scenario_type(2):
             scenario_description = getattr(self.config, 'scenario_description', None) or {}
             trigger_position = scenario_description.get('trigger_position') or {}
             scenario2_defaults = {
                 'target_outcome': 'normal',
                 'scenario_type_id': 2,
-                'other_actor_source': 'left',
+                'leading_vehicle_model': 'vehicle.tesla.model3',
                 'other_vehicle_model': 'vehicle.audi.tt',
+                'other_actor_source': 'left',
+                'leading_spawn_mode': 'template',
+                'leading_release_distance_m': 18.0,
+                'leading_target_speed_mps': 7.0,
+                'leading_post_merge_speed_mps': 8.0,
+                'leading_lookahead_distance_m': 10.0,
+                'leading_min_travel_distance_m': 14.0,
+                'other_distance_back_m': 10.0,
                 'other_target_speed_mps': 8.0,
-                'other_speed_variation_mps': 0.15,
-                'other_release_distance_m': 24.0,
-                'other_clear_distance_m': 22.0,
-                'ego_clear_distance_m': 18.0,
-                'other_min_travel_distance_m': 18.0,
+                'other_speed_variation_mps': 0.1,
+                'other_min_follow_distance_m': 8.0,
+                'other_lane_side': 'right',
+                'ego_clear_distance_m': 22.0,
+                'scene_end_after_stop_seconds': 0.5,
                 'ego_reaction_delay_seconds': 0.0,
                 'ego_min_throttle_during_delay': 0.0,
-                'scene_end_after_stop_seconds': 0.5,
                 'trigger_position_x': trigger_position.get('x'),
                 'trigger_position_y': trigger_position.get('y'),
                 'trigger_position_z': trigger_position.get('z'),
             }
             outcome_profiles = {
                 'collision': {
-                    'other_target_speed_mps': 12.0,
+                    'leading_release_distance_m': 12.0,
+                    'leading_target_speed_mps': 5.0,
+                    'leading_post_merge_speed_mps': 6.0,
+                    'leading_min_travel_distance_m': 12.0,
+                    'other_target_speed_mps': 8.0,
                     'other_speed_variation_mps': 0.05,
-                    'other_release_distance_m': 16.0,
-                    'other_clear_distance_m': 24.0,
-                    'ego_clear_distance_m': 20.0,
-                    'other_min_travel_distance_m': 20.0,
-                    'ego_reaction_delay_seconds': 1.0,
-                    'ego_min_throttle_during_delay': 0.3,
+                    'ego_clear_distance_m': 18.0,
                 },
                 'normal': {
-                    'other_target_speed_mps': 8.0,
-                    'other_speed_variation_mps': 0.15,
-                    'other_release_distance_m': 32.0,
-                    'other_clear_distance_m': 22.0,
-                    'ego_clear_distance_m': 18.0,
-                    'other_min_travel_distance_m': 16.0,
-                    'ego_reaction_delay_seconds': 0.0,
-                    'ego_min_throttle_during_delay': 0.0,
+                    'leading_release_distance_m': 24.0,
+                    'leading_target_speed_mps': 8.0,
+                    'leading_post_merge_speed_mps': 9.0,
+                    'leading_min_travel_distance_m': 16.0,
+                    'other_target_speed_mps': 7.5,
+                    'other_speed_variation_mps': 0.1,
+                    'ego_clear_distance_m': 22.0,
                 },
             }
             target_outcome = str(parameters.get('target_outcome', scenario2_defaults['target_outcome'])).lower()
@@ -121,7 +139,7 @@ class RouteScenario():
             scenario2_defaults['target_outcome'] = target_outcome
             self.config.parameters = copy.deepcopy(scenario2_defaults)
             return scenario2_defaults
-        if self.config.scenario_id == 3:
+        if self._is_custom_scenario_type(3):
             scenario3_defaults = {
                 'target_outcome': 'near_miss',
                 'leading_distance_m': 12.0,
@@ -187,6 +205,23 @@ class RouteScenario():
             self.config.parameters = copy.deepcopy(scenario3_defaults)
             return scenario3_defaults
         return parameters
+
+    def _build_transform_from_parameter(self, key_name):
+        transform_dict = self.config.parameters.get(key_name) if self.config.parameters is not None else None
+        if transform_dict is None:
+            return None
+        return carla.Transform(
+            location=carla.Location(
+                x=float(transform_dict['x']),
+                y=float(transform_dict['y']),
+                z=float(transform_dict.get('z', 0.0))
+            ),
+            rotation=carla.Rotation(
+                pitch=float(transform_dict.get('pitch', 0.0)),
+                yaw=float(transform_dict.get('yaw', 0.0)),
+                roll=float(transform_dict.get('roll', 0.0))
+            )
+        )
 
     def _shift_waypoint(self, waypoint, distance, forward=True):
         if waypoint is None:
@@ -378,6 +413,35 @@ class RouteScenario():
 
     def _initialize_scenario2_actors(self):
         scenario_params = self._get_scenario_parameters()
+        roadside_transform = self._build_transform_from_parameter('leading_roadside_transform')
+        driving_anchor_transform = self._build_transform_from_parameter('leading_driving_anchor_transform')
+        if roadside_transform is not None and driving_anchor_transform is not None:
+            anchor_waypoint = self.world.get_map().get_waypoint(
+                driving_anchor_transform.location,
+                project_to_road=True,
+                lane_type=carla.LaneType.Driving
+            )
+            if anchor_waypoint is None:
+                raise RuntimeError('Failed to resolve custom Scenario 2 leading driving anchor waypoint')
+
+            ego_start_waypoint = self.world.get_map().get_waypoint(
+                self.route[0][0].location,
+                project_to_road=True,
+                lane_type=carla.LaneType.Driving
+            )
+            if ego_start_waypoint is None:
+                raise RuntimeError('Failed to resolve custom Scenario 2 ego start waypoint')
+
+            other_waypoint = self._resolve_scenario3_other_waypoint(ego_start_waypoint, scenario_params)
+            self._spawn_special_actor('leading', roadside_transform, scenario_params['leading_vehicle_model'])
+            self._spawn_special_actor('other', other_waypoint.transform, scenario_params['other_vehicle_model'])
+            special_actor_routes = {
+                'leading': self._build_special_actor_route(anchor_waypoint),
+                'other': self._build_special_actor_route(other_waypoint),
+            }
+            self.scenario_instance.set_special_actors(self.special_actors, scenario_params, special_actor_routes)
+            return
+
         source_name, actor_config = self._choose_scenario2_actor_transform(scenario_params)
         if actor_config is None:
             self.logger.log('>> Scenario 2 has no matched other_actor template, skip scripted crossing actor', color='yellow')
@@ -536,9 +600,9 @@ class RouteScenario():
         return amount, spawn_points
 
     def initialize_actors(self):
-        if self.config.scenario_id == 2:
+        if self._is_custom_scenario_type(2):
             self._initialize_scenario2_actors()
-        if self.config.scenario_id == 3:
+        if self._is_custom_scenario_type(3):
             self._initialize_scenario3_actors()
 
         amount, spawn_points = self.get_location_nearby_spawn_points()
@@ -613,15 +677,16 @@ class RouteScenario():
             ego_truncated = True
             self.logger.log('>> Scenario stops due to max steps', color='yellow')
 
-        if self.config.scenario_id == 3 and ego_collision:
+        custom_scenario_type = self._get_custom_scenario_type_id()
+        if custom_scenario_type in (2, 3) and ego_collision:
             self.post_collision_steps += 1
             if self.post_collision_steps >= self.post_collision_hold_steps:
                 ego_stop = True
                 self.logger.log('>> Scenario stops 0.5s after collision', color='yellow')
-        elif self.config.scenario_id == 3:
+        elif custom_scenario_type in (2, 3):
             self.post_collision_steps = 0
 
-        if self.config.scenario_id in (2, 3) and self.scenario_instance.should_terminate_episode():
+        if custom_scenario_type in (2, 3) and self.scenario_instance.should_terminate_episode():
             ego_stop = True
             self.logger.log('>> Scenario stops because scripted actors completed the intended interaction', color='yellow')
 

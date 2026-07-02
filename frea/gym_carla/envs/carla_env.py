@@ -222,7 +222,15 @@ class CarlaEnv(gym.Env):
         self.export_queue = None
 
     def _apply_collision_target_ego_override(self, throttle, steer, brake):
-        if self.config is None or self.config.scenario_id not in (2, 3) or self.config.parameters is None:
+        if self.config is None or self.config.parameters is None:
+            return throttle, steer, brake
+
+        scenario_type_id = self.config.parameters.get('scenario_type_id', self.config.scenario_id)
+        try:
+            scenario_type_id = int(scenario_type_id)
+        except (TypeError, ValueError):
+            scenario_type_id = self.config.scenario_id
+        if scenario_type_id not in (2, 3):
             return throttle, steer, brake
 
         parameters = self.config.parameters
@@ -230,7 +238,7 @@ class CarlaEnv(gym.Env):
         if target_outcome != 'collision':
             return throttle, steer, brake
 
-        if self.config.scenario_id == 3:
+        if scenario_type_id == 3:
             trigger_after_seconds = float(parameters.get('leading_brake_after_seconds', 0.0))
         else:
             trigger_after_seconds = 0.0

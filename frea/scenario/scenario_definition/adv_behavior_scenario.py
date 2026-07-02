@@ -82,6 +82,16 @@ class AdvBehaviorSingle(BasicScenario):
             return None
         return carla.Location(x=float(x), y=float(y), z=float(z or 0.0))
 
+    def _get_transform_parameter_location(self, key_name):
+        transform_dict = self.scripted_parameters.get(key_name)
+        if transform_dict is None:
+            return None
+        return carla.Location(
+            x=float(transform_dict['x']),
+            y=float(transform_dict['y']),
+            z=float(transform_dict.get('z', 0.0))
+        )
+
     def _follow_route_with_pid(self, role_name, target_speed, lookahead_steps=8, reach_threshold_m=4.0):
         actor = self.special_actors.get(role_name)
         actor_index = self.special_actor_indices.get(role_name)
@@ -189,6 +199,74 @@ class AdvBehaviorSingle(BasicScenario):
         self.script_step += 1
 
     def _update_scenario2_special_actors(self):
+        leading_actor = self.special_actors.get('leading')
+        if leading_actor is not None:
+            anchor_location = self._get_transform_parameter_location('leading_driving_anchor_transform')
+            if anchor_location is None:
+                self.should_terminate = False
+                return
+
+            ego_location = CarlaDataProvider.get_location(self.ego_vehicle)
+            ego_speed = calculate_abs_velocity(CarlaDataProvider.get_velocity(self.ego_vehicle))
+            leading_location = CarlaDataProvider.get_location(leading_actor)
+
+            release_distance = float(self.scripted_parameters.get('leading_release_distance_m', 18.0))
+            leading_speed = float(self.scripted_parameters.get('leading_target_speed_mps', 7.0))
+            leading_post_merge_speed = float(self.scripted_parameters.get('leading_post_merge_speed_mps', leading_speed))
+            leading_lookahead_distance = float(self.scripted_parameters.get('leading_lookahead_distance_m', 10.0))
+            leading_min_travel_distance = float(self.scripted_parameters.get('leading_min_travel_distance_m', 14.0))
+            ego_clear_distance = float(self.scripted_parameters.get('ego_clear_distance_m', 22.0))
+            other_base_speed = float(self.scripted_parameters.get('other_target_speed_mps', 8.0))
+            other_speed_variation = float(self.scripted_parameters.get('other_speed_variation_mps', 0.1))
+            other_min_follow_distance = float(self.scripted_parameters.get('other_min_follow_distance_m', 8.0))
+            scene_end_after_stop_seconds = float(self.scripted_parameters.get('scene_end_after_stop_seconds', 0.5))
+            hold_steps_needed = max(1, int(scene_end_after_stop_seconds / self.fixed_delta_seconds))
+
+            anchor_distance = ego_location.distance(anchor_location)
+            initial_leading_location = self.script_state.setdefault(
+                'scenario2_leading_initial_location',
+                carla.Location(x=leading_location.x, y=leading_location.y, z=leading_location.z)
+            )
+            initial_ego_location = self.script_state.setdefault(
+                'scenario2_ego_initial_location',
+                carla.Location(x=ego_location.x, y=ego_location.y, z=ego_location.z)
+            )
+            leading_travel_distance = leading_location.distance(initial_leading_location)
+            ego_travel_distance = ego_location.distance(initial_ego_location)
+
+            released = self.script_state.get('scenario2_leading_released', False)
+            if not released and anchor_distance <= release_distance:
+                released = True
+                self.script_state['scenario2_leading_released'] = True
+                self.script_state['scenario2_release_step'] = self.script_step
+
+            if released:
+                target_speed = leading_post_merge_speed if leading_travel_distance >= leading_min_travel_distance else leading_speed
+                self._follow_lane_with_pid('leading', target_speed, lookahead_distance=leading_lookahead_distance)
+            else:
+                self.scenario_operation.brake(leading_actor)
+
+            other_actor = self.special_actors.get('other')
+            if other_actor is not None:
+                other_location = CarlaDataProvider.get_location(other_actor)
+                other_distance_to_ego = other_location.distance(ego_location)
+                if other_distance_to_ego <= other_min_follow_distance:
+                    target_other_speed = max(0.0, ego_speed - 2.0)
+                else:
+                    target_other_reference_speed = min(max(other_base_speed, ego_speed), ego_speed + 0.5)
+                    target_other_speed = self._get_speed_with_variation(
+                        target_other_reference_speed,
+                        other_speed_variation
+                    )
+                self._follow_lane_with_pid('other', target_other_speed, lookahead_distance=10.0)
+
+            if released and leading_travel_distance >= leading_min_travel_distance and ego_travel_distance >= ego_clear_distance:
+                self.stop_hold_steps += 1
+            else:
+                self.stop_hold_steps = 0
+            self.should_terminate = self.stop_hold_steps >= hold_steps_needed
+            return
+
         other_actor = self.special_actors.get('other')
         if other_actor is None:
             self.should_terminate = False
