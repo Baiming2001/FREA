@@ -104,6 +104,8 @@ class RouteScenario():
                 'other_target_speed_mps': 8.0,
                 'other_speed_variation_mps': 0.1,
                 'other_min_follow_distance_m': 8.0,
+                'other_match_speed_gain': 0.6,
+                'other_close_speed_penalty_mps': 0.6,
                 'other_lane_side': 'right',
                 'ego_clear_distance_m': 22.0,
                 'scene_end_after_stop_seconds': 0.5,
@@ -115,13 +117,18 @@ class RouteScenario():
             }
             outcome_profiles = {
                 'collision': {
-                    'leading_release_distance_m': 12.0,
-                    'leading_target_speed_mps': 5.0,
-                    'leading_post_merge_speed_mps': 6.0,
-                    'leading_min_travel_distance_m': 12.0,
-                    'other_target_speed_mps': 8.0,
+                    'leading_release_distance_m': 8.0,
+                    'leading_target_speed_mps': 6.5,
+                    'leading_post_merge_speed_mps': 5.5,
+                    'leading_lookahead_distance_m': 7.0,
+                    'leading_min_travel_distance_m': 10.0,
+                    'other_target_speed_mps': 8.5,
                     'other_speed_variation_mps': 0.05,
+                    'other_match_speed_gain': 0.8,
+                    'other_close_speed_penalty_mps': 0.3,
                     'ego_clear_distance_m': 18.0,
+                    'ego_reaction_delay_seconds': 1.0,
+                    'ego_min_throttle_during_delay': 0.25,
                 },
                 'normal': {
                     'leading_release_distance_m': 24.0,
@@ -130,6 +137,8 @@ class RouteScenario():
                     'leading_min_travel_distance_m': 16.0,
                     'other_target_speed_mps': 7.5,
                     'other_speed_variation_mps': 0.1,
+                    'other_match_speed_gain': 0.5,
+                    'other_close_speed_penalty_mps': 0.8,
                     'ego_clear_distance_m': 22.0,
                 },
             }
