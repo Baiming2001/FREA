@@ -28,8 +28,20 @@ def parse_args():
     parser.add_argument(
         "--scenario-id",
         type=int,
-        default=2,
-        help="Scenario route directory to scan, e.g. 2 -> scenario_02_routes.",
+        default=None,
+        help="Single scenario route directory to scan, e.g. 2 -> scenario_02_routes.",
+    )
+    parser.add_argument(
+        "--scenario-ids",
+        nargs="+",
+        type=int,
+        default=None,
+        help="Multiple scenario route directories to scan, e.g. --scenario-ids 2 3 4.",
+    )
+    parser.add_argument(
+        "--scan-all-scenarios",
+        action="store_true",
+        help="Scan all predefined route directories under frea/scenario/scenario_data/route.",
     )
     parser.add_argument(
         "--towns",
@@ -179,38 +191,64 @@ def route_candidate_priority(candidate):
     return (lane_priority, progress_target, candidate["lateral_distance_m"])
 
 
-def discover_route_files(root_dir, scenario_id, towns):
-    route_dir = root_dir / "frea" / "scenario" / "scenario_data" / "route" / f"scenario_{scenario_id:02d}_routes"
-    if not route_dir.exists():
-        raise FileNotFoundError(f"Route directory not found: {route_dir}")
+def resolve_scenario_ids(args, root_dir):
+    if args.scan_all_scenarios:
+        route_root = root_dir / "frea" / "scenario" / "scenario_data" / "route"
+        scenario_ids = []
+        for route_dir in sorted(route_root.glob("scenario_*_routes")):
+            parts = route_dir.name.split("_")
+            if len(parts) < 3:
+                continue
+            try:
+                scenario_ids.append(int(parts[1]))
+            except ValueError:
+                continue
+        if not scenario_ids:
+            raise ValueError(f"No scenario_*_routes directories found under {route_root}")
+        return sorted(set(scenario_ids))
 
+    scenario_ids = []
+    if args.scenario_id is not None:
+        scenario_ids.append(args.scenario_id)
+    if args.scenario_ids:
+        scenario_ids.extend(args.scenario_ids)
+    if not scenario_ids:
+        scenario_ids = [2]
+    return sorted(set(scenario_ids))
+
+
+def discover_route_files(root_dir, scenario_ids, towns):
     from frea.scenario.tools.route_parser import RouteParser
 
     route_records = []
-    for route_file in sorted(route_dir.glob(f"scenario_{scenario_id:02d}_route_*.xml")):
-        parsed_routes = RouteParser.parse_routes_file(
-            str(route_file),
-            str(root_dir / "frea" / "scenario" / "scenario_data" / "route" / "scenarios" / f"scenario_{scenario_id:02d}.json")
-        )
-        if not parsed_routes:
+    for scenario_id in scenario_ids:
+        route_dir = root_dir / "frea" / "scenario" / "scenario_data" / "route" / f"scenario_{scenario_id:02d}_routes"
+        if not route_dir.exists():
             continue
 
-        route_config = parsed_routes[0]
-        if route_config.town not in towns:
-            continue
+        scenario_file = root_dir / "frea" / "scenario" / "scenario_data" / "route" / "scenarios" / f"scenario_{scenario_id:02d}.json"
+        for route_file in sorted(route_dir.glob(f"scenario_{scenario_id:02d}_route_*.xml")):
+            parsed_routes = RouteParser.parse_routes_file(str(route_file), str(scenario_file))
+            if not parsed_routes:
+                continue
 
-        route_records.append(
-            {
-                "town": route_config.town,
-                "route_id": int(route_file.stem.split("_")[-1]),
-                "route_file": route_file,
-                "config": route_config,
-            }
-        )
+            route_config = parsed_routes[0]
+            if route_config.town not in towns:
+                continue
+
+            route_records.append(
+                {
+                    "scenario_id": scenario_id,
+                    "town": route_config.town,
+                    "route_id": int(route_file.stem.split("_")[-1]),
+                    "route_file": route_file,
+                    "config": route_config,
+                }
+            )
 
     if not route_records:
         raise ValueError(
-            f"No route files matched towns {towns} under scenario_{scenario_id:02d}_routes"
+            f"No route files matched towns {sorted(towns)} under scenario ids {scenario_ids}"
         )
 
     return route_records
@@ -282,15 +320,16 @@ def main():
     args = parse_args()
     root_dir = args.root_dir.resolve()
     ensure_repo_on_path(root_dir)
+    scenario_ids = resolve_scenario_ids(args, root_dir)
 
     import carla
 
-    route_records = discover_route_files(root_dir, args.scenario_id, set(args.towns))
+    route_records = discover_route_files(root_dir, scenario_ids, set(args.towns))
     client = carla.Client(args.host, args.port)
     client.set_timeout(args.client_timeout)
 
     output = {
-        "scenario_id": args.scenario_id,
+        "scenario_ids": scenario_ids,
         "towns": args.towns,
         "scan_parameters": {
             "sample_step": args.sample_step,
@@ -311,12 +350,13 @@ def main():
     for route_record in route_records:
         town = route_record["town"]
         route_id = route_record["route_id"]
+        scenario_id = route_record["scenario_id"]
         if town != current_town:
             print(f"Loading world: {town}")
             world = client.load_world(town)
             current_town = town
 
-        print(f"Scanning {town} route {route_id:02d}")
+        print(f"Scanning scenario {scenario_id:02d} {town} route {route_id:02d}")
         scan_result = scan_route(world, route_record["config"], args, carla)
         town_total_count[town] = town_total_count.get(town, 0) + 1
         if scan_result["has_candidate"]:
@@ -324,6 +364,7 @@ def main():
 
         output["routes"].append(
             {
+                "source_scenario_id": scenario_id,
                 "town": town,
                 "route_id": route_id,
                 "route_file": str(route_record["route_file"]),
