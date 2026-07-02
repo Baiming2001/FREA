@@ -219,7 +219,7 @@ class AdvBehaviorSingle(BasicScenario):
             other_base_speed = float(self.scripted_parameters.get('other_target_speed_mps', 8.0))
             other_speed_variation = float(self.scripted_parameters.get('other_speed_variation_mps', 0.1))
             other_min_follow_distance = float(self.scripted_parameters.get('other_min_follow_distance_m', 8.0))
-            other_match_speed_gain = float(self.scripted_parameters.get('other_match_speed_gain', 0.6))
+            other_follow_speed_offset = float(self.scripted_parameters.get('other_follow_speed_offset_mps', 0.0))
             other_close_speed_penalty = float(self.scripted_parameters.get('other_close_speed_penalty_mps', 0.6))
             other_start_boost = float(self.scripted_parameters.get('other_start_boost_mps', 2.5))
             other_start_boost_speed_threshold = float(self.scripted_parameters.get('other_start_boost_speed_threshold_mps', 3.0))
@@ -255,12 +255,10 @@ class AdvBehaviorSingle(BasicScenario):
                 other_location = CarlaDataProvider.get_location(other_actor)
                 other_distance_to_ego = other_location.distance(ego_location)
                 other_speed = calculate_abs_velocity(CarlaDataProvider.get_velocity(other_actor))
-                speed_gap = ego_speed - other_base_speed
-                matched_speed = other_base_speed + max(0.0, speed_gap) * other_match_speed_gain
+                target_other_reference_speed = max(other_base_speed, ego_speed + other_follow_speed_offset)
                 if other_distance_to_ego <= other_min_follow_distance:
                     target_other_speed = max(0.0, ego_speed - other_close_speed_penalty)
                 else:
-                    target_other_reference_speed = min(max(other_base_speed, matched_speed), ego_speed + 0.5)
                     if other_speed < other_start_boost_speed_threshold and ego_speed > other_speed:
                         target_other_reference_speed = max(
                             target_other_reference_speed,

@@ -240,6 +240,7 @@ class CarlaEnv(gym.Env):
 
         if scenario_type_id == 2:
             force_no_brake_distance = float(parameters.get('ego_force_no_brake_distance_m', 0.0))
+            max_brake_during_collision_window = float(parameters.get('ego_max_brake_during_collision_window', 1.0))
             leading_actor = self._get_camera_target_actor('leading')
             if leading_actor is not None and force_no_brake_distance > 0.0:
                 try:
@@ -249,7 +250,7 @@ class CarlaEnv(gym.Env):
                         leading_distance = ego_location.distance(leading_location)
                         if leading_distance <= force_no_brake_distance:
                             throttle = max(float(throttle), float(parameters.get('ego_min_throttle_during_delay', 0.0)))
-                            brake = 0.0
+                            brake = min(float(brake), max_brake_during_collision_window)
                             return throttle, steer, brake
                 except RuntimeError:
                     pass
