@@ -1,0 +1,3 @@
+python generate_type2_parking_test_config.py \
+  --input /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_route_scan_all_routes.json \
+  --output /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_parking_pilot.json
