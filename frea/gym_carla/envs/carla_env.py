@@ -222,7 +222,7 @@ class CarlaEnv(gym.Env):
         self.export_queue = None
 
     def _apply_collision_target_ego_override(self, throttle, steer, brake):
-        if self.config is None or self.config.scenario_id != 3 or self.config.parameters is None:
+        if self.config is None or self.config.scenario_id not in (2, 3) or self.config.parameters is None:
             return throttle, steer, brake
 
         parameters = self.config.parameters
@@ -230,16 +230,19 @@ class CarlaEnv(gym.Env):
         if target_outcome != 'collision':
             return throttle, steer, brake
 
-        brake_after_seconds = float(parameters.get('leading_brake_after_seconds', 0.0))
+        if self.config.scenario_id == 3:
+            trigger_after_seconds = float(parameters.get('leading_brake_after_seconds', 0.0))
+        else:
+            trigger_after_seconds = 0.0
         ego_reaction_delay_seconds = float(parameters.get('ego_reaction_delay_seconds', 0.0))
         ego_min_throttle_during_delay = float(parameters.get('ego_min_throttle_during_delay', 0.0))
 
-        brake_start_step = int(brake_after_seconds / self.fixed_delta_seconds)
         if ego_reaction_delay_seconds <= 0.0:
             return throttle, steer, brake
 
-        reaction_resume_step = brake_start_step + int(ego_reaction_delay_seconds / self.fixed_delta_seconds)
-        if brake_start_step <= self.time_step < reaction_resume_step:
+        trigger_start_step = int(trigger_after_seconds / self.fixed_delta_seconds)
+        reaction_resume_step = trigger_start_step + int(ego_reaction_delay_seconds / self.fixed_delta_seconds)
+        if trigger_start_step <= self.time_step < reaction_resume_step:
             throttle = max(float(throttle), ego_min_throttle_during_delay)
             brake = 0.0
         return throttle, steer, brake

@@ -205,6 +205,7 @@ class AdvBehaviorSingle(BasicScenario):
         release_distance = float(self.scripted_parameters.get('other_release_distance_m', 20.0))
         clear_distance = float(self.scripted_parameters.get('other_clear_distance_m', 22.0))
         ego_clear_distance = float(self.scripted_parameters.get('ego_clear_distance_m', 18.0))
+        other_min_travel_distance = float(self.scripted_parameters.get('other_min_travel_distance_m', 18.0))
         base_speed = float(self.scripted_parameters.get('other_target_speed_mps', 8.0))
         speed_variation = float(self.scripted_parameters.get('other_speed_variation_mps', 0.15))
         lookahead_distance = float(self.scripted_parameters.get('other_lookahead_distance_m', 12.0))
@@ -213,22 +214,50 @@ class AdvBehaviorSingle(BasicScenario):
         other_location = CarlaDataProvider.get_location(other_actor)
         ego_distance_to_trigger = ego_location.distance(trigger_location)
         other_distance_to_trigger = other_location.distance(trigger_location)
+        initial_other_location = self.script_state.setdefault('scenario2_other_initial_location', carla.Location(
+            x=other_location.x,
+            y=other_location.y,
+            z=other_location.z
+        ))
+        initial_ego_location = self.script_state.setdefault('scenario2_ego_initial_location', carla.Location(
+            x=ego_location.x,
+            y=ego_location.y,
+            z=ego_location.z
+        ))
+        other_travel_distance = other_location.distance(initial_other_location)
+        ego_travel_distance = ego_location.distance(initial_ego_location)
 
         released = self.script_state.get('scenario2_other_released', False)
         if not released and ego_distance_to_trigger <= release_distance:
             released = True
             self.script_state['scenario2_other_released'] = True
+            self.script_state['scenario2_trigger_min_distance_after_release'] = other_distance_to_trigger
 
         if released:
+            min_distance_after_release = self.script_state.get('scenario2_trigger_min_distance_after_release', other_distance_to_trigger)
+            min_distance_after_release = min(min_distance_after_release, other_distance_to_trigger)
+            self.script_state['scenario2_trigger_min_distance_after_release'] = min_distance_after_release
+
             target_speed = self._get_speed_with_variation(base_speed, speed_variation)
             self._follow_lane_with_pid('other', target_speed, lookahead_distance=lookahead_distance)
+            crossed_trigger = (
+                min_distance_after_release <= max(4.0, lookahead_distance * 0.5)
+                and other_distance_to_trigger >= clear_distance
+            )
+            ego_cleared_scene = (
+                ego_distance_to_trigger >= ego_clear_distance
+                or ego_travel_distance >= ego_clear_distance
+            )
         else:
             self.scenario_operation.brake(other_actor)
+            crossed_trigger = False
+            ego_cleared_scene = False
 
         self.should_terminate = (
             released
-            and other_distance_to_trigger >= clear_distance
-            and ego_distance_to_trigger >= ego_clear_distance
+            and crossed_trigger
+            and other_travel_distance >= other_min_travel_distance
+            and ego_cleared_scene
         )
 
     def should_terminate_episode(self):

@@ -85,6 +85,9 @@ class RouteScenario():
                 'other_release_distance_m': 24.0,
                 'other_clear_distance_m': 22.0,
                 'ego_clear_distance_m': 18.0,
+                'other_min_travel_distance_m': 18.0,
+                'ego_reaction_delay_seconds': 0.0,
+                'ego_min_throttle_during_delay': 0.0,
                 'scene_end_after_stop_seconds': 0.5,
                 'trigger_position_x': trigger_position.get('x'),
                 'trigger_position_y': trigger_position.get('y'),
@@ -92,18 +95,24 @@ class RouteScenario():
             }
             outcome_profiles = {
                 'collision': {
-                    'other_target_speed_mps': 10.5,
+                    'other_target_speed_mps': 12.0,
                     'other_speed_variation_mps': 0.05,
-                    'other_release_distance_m': 10.0,
+                    'other_release_distance_m': 16.0,
                     'other_clear_distance_m': 24.0,
                     'ego_clear_distance_m': 20.0,
+                    'other_min_travel_distance_m': 20.0,
+                    'ego_reaction_delay_seconds': 1.0,
+                    'ego_min_throttle_during_delay': 0.3,
                 },
                 'normal': {
                     'other_target_speed_mps': 8.0,
                     'other_speed_variation_mps': 0.15,
-                    'other_release_distance_m': 24.0,
+                    'other_release_distance_m': 32.0,
                     'other_clear_distance_m': 22.0,
                     'ego_clear_distance_m': 18.0,
+                    'other_min_travel_distance_m': 16.0,
+                    'ego_reaction_delay_seconds': 0.0,
+                    'ego_min_throttle_during_delay': 0.0,
                 },
             }
             target_outcome = str(parameters.get('target_outcome', scenario2_defaults['target_outcome'])).lower()
@@ -357,7 +366,7 @@ class RouteScenario():
         preferred_source = str(scenario_params.get('other_actor_source', 'left')).lower()
         if preferred_source:
             source_preference.append(preferred_source)
-        for fallback_source in ('left', 'front', 'right'):
+        for fallback_source in ('left', 'right', 'front'):
             if fallback_source not in source_preference:
                 source_preference.append(fallback_source)
 
