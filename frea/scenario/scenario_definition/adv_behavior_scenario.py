@@ -258,18 +258,9 @@ class AdvBehaviorSingle(BasicScenario):
                 other_location = CarlaDataProvider.get_location(other_actor)
                 other_distance_to_ego = other_location.distance(ego_location)
                 other_speed = calculate_abs_velocity(CarlaDataProvider.get_velocity(other_actor))
-                target_other_reference_speed = ego_speed + other_follow_speed_offset
-                if other_distance_to_ego >= other_far_follow_distance:
-                    target_other_reference_speed = max(
-                        target_other_reference_speed,
-                        ego_speed + other_far_follow_extra
-                    )
+                target_other_reference_speed = ego_speed
                 if other_distance_to_ego <= other_min_follow_distance:
-                    if other_use_adjacent_lane:
-                        target_other_speed = max(0.0, ego_speed - other_close_speed_penalty)
-                    else:
-                        # Same-lane following needs only a tiny speed reduction, otherwise the gap keeps growing.
-                        target_other_speed = max(0.0, ego_speed - other_close_speed_penalty)
+                    target_other_speed = max(0.0, ego_speed - other_close_speed_penalty)
                 else:
                     if other_speed < other_start_boost_speed_threshold and ego_speed > other_speed:
                         target_other_reference_speed = max(
