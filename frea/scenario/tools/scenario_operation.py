@@ -27,6 +27,10 @@ class ScenarioOperation(object):
         self.vehicle_controller = {}
         self.fixed_delta_seconds = fixed_delta_seconds
 
+    @staticmethod
+    def _mps_to_kmh(speed_mps):
+        return float(speed_mps) * 3.6
+
     def initialize_vehicle_actors(self, actor_transform_list, actor_type_list):
         other_actor_list = []
         if len(actor_type_list) != len(actor_transform_list):
@@ -77,7 +81,7 @@ class ScenarioOperation(object):
     def drive_to_target_followlane(self, i, target_transform, target_speed):
         # 'i' represents id/order of specific actor in other_actors list
         cur_vehicle_control = self.vehicle_controller.get(self.other_actors[i].id)
-        control = cur_vehicle_control.run_step(target_speed, target_transform)
+        control = cur_vehicle_control.run_step(self._mps_to_kmh(target_speed), target_transform)
         self.other_actors[i].apply_control(control)
 
     def drive_to_nofollowlane(self, i, location_queue, target_speed):
@@ -92,7 +96,7 @@ class ScenarioOperation(object):
             else:
                 target_location = target_location
         target_waypoint = CarlaDataProvider.get_map().get_waypoint(cur_actor_location)
-        control = cur_vehicle_control.run_step(target_speed, target_waypoint)
+        control = cur_vehicle_control.run_step(self._mps_to_kmh(target_speed), target_waypoint)
         self.other_actors[i].apply_control(control)
 
     def brake(self, actor):
