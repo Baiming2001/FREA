@@ -145,7 +145,7 @@ class RouteScenario():
                     'ego_max_brake_during_collision_window': 0.02,
                 },
                 'normal': {
-                    'leading_release_distance_m': 18.0,
+                    'leading_release_distance_m': 13.0,
                     'leading_target_speed_mps': 8.0,
                     'leading_post_merge_speed_mps': 9.0,
                     'leading_min_travel_distance_m': 16.0,
