@@ -217,6 +217,7 @@ class AdvBehaviorSingle(BasicScenario):
             leading_min_travel_distance = float(self.scripted_parameters.get('leading_min_travel_distance_m', 14.0))
             ego_clear_distance = float(self.scripted_parameters.get('ego_clear_distance_m', 22.0))
             other_base_speed = float(self.scripted_parameters.get('other_target_speed_mps', 8.0))
+            other_fixed_speed = self.scripted_parameters.get('other_fixed_speed_mps')
             other_speed_variation = float(self.scripted_parameters.get('other_speed_variation_mps', 0.1))
             other_min_follow_distance = float(self.scripted_parameters.get('other_min_follow_distance_m', 8.0))
             other_follow_speed_offset = float(self.scripted_parameters.get('other_follow_speed_offset_mps', 0.0))
@@ -257,24 +258,27 @@ class AdvBehaviorSingle(BasicScenario):
                 other_location = CarlaDataProvider.get_location(other_actor)
                 other_distance_to_ego = other_location.distance(ego_location)
                 other_speed = calculate_abs_velocity(CarlaDataProvider.get_velocity(other_actor))
-                target_other_reference_speed = max(other_base_speed, ego_speed + other_follow_speed_offset)
-                if other_distance_to_ego >= other_far_follow_distance:
-                    target_other_reference_speed = max(
-                        target_other_reference_speed,
-                        ego_speed + other_far_follow_extra
-                    )
-                if other_distance_to_ego <= other_min_follow_distance:
-                    target_other_speed = max(0.0, ego_speed - other_close_speed_penalty)
+                if other_fixed_speed is not None:
+                    target_other_speed = float(other_fixed_speed)
                 else:
-                    if other_speed < other_start_boost_speed_threshold and ego_speed > other_speed:
+                    target_other_reference_speed = max(other_base_speed, ego_speed + other_follow_speed_offset)
+                    if other_distance_to_ego >= other_far_follow_distance:
                         target_other_reference_speed = max(
                             target_other_reference_speed,
-                            min(ego_speed + 1.0, other_speed + other_start_boost)
+                            ego_speed + other_far_follow_extra
                         )
-                    target_other_speed = self._get_speed_with_variation(
-                        target_other_reference_speed,
-                        other_speed_variation
-                    )
+                    if other_distance_to_ego <= other_min_follow_distance:
+                        target_other_speed = max(0.0, ego_speed - other_close_speed_penalty)
+                    else:
+                        if other_speed < other_start_boost_speed_threshold and ego_speed > other_speed:
+                            target_other_reference_speed = max(
+                                target_other_reference_speed,
+                                min(ego_speed + 1.0, other_speed + other_start_boost)
+                            )
+                        target_other_speed = self._get_speed_with_variation(
+                            target_other_reference_speed,
+                            other_speed_variation
+                        )
                 self._follow_lane_with_pid('other', target_other_speed, lookahead_distance=10.0)
 
             if released and leading_travel_distance >= leading_min_travel_distance and ego_travel_distance >= ego_clear_distance:
