@@ -507,6 +507,20 @@ class CarlaEnv(gym.Env):
             'scenario_number': scenario_number,
         }
 
+    def _get_scene_output_base_dir(self):
+        scene_naming = self._get_scene_naming_fields()
+        parameters = self.config.parameters or {}
+        map_name = self.world.get_map().name.split('/')[-1]
+        source_scenario_id = parameters.get('source_scenario_id', self.config.scenario_id)
+        scenario_group = f"ScenarioType{scene_naming['scenario_type_id']}"
+        source_group = f"SourceScenario{int(source_scenario_id)}"
+        return os.path.join(
+            self.output_dir,
+            f"{scenario_group}_{source_group}_{map_name}",
+            "camera_frames",
+            f"data_{self.config.data_id:04d}"
+        )
+
     def _run_scenario(self):
         self.scenario_manager.run_scenario()  # init the background vehicle
 
@@ -738,14 +752,7 @@ class CarlaEnv(gym.Env):
         if getattr(self, 'time_step', 0) % self.capture_stride != 0:
             return
 
-        scenario_name = f"Scenario{self.config.scenario_id}"
-        map_name = self.world.get_map().name.split('/')[-1]
-        base_dir = os.path.join(
-            self.output_dir,
-            f"{scenario_name}_{map_name}",
-            "camera_frames",
-            f"data_{self.config.data_id:04d}"
-        )
+        base_dir = self._get_scene_output_base_dir()
         self._write_scene_metadata(base_dir)
 
         frame_ext = 'jpg' if self.camera_export_format in ('jpg', 'jpeg') else self.camera_export_format
@@ -773,14 +780,7 @@ class CarlaEnv(gym.Env):
         if getattr(self, 'time_step', 0) % self.capture_stride != 0:
             return
 
-        scenario_name = f"Scenario{self.config.scenario_id}"
-        map_name = self.world.get_map().name.split('/')[-1]
-        base_dir = os.path.join(
-            self.output_dir,
-            f"{scenario_name}_{map_name}",
-            "camera_frames",
-            f"data_{self.config.data_id:04d}"
-        )
+        base_dir = self._get_scene_output_base_dir()
         self._write_scene_metadata(base_dir)
 
         frame_name = f"frame_{max(self.front_camera_frame_idx - 1, 0):04d}.npy"
@@ -1263,14 +1263,7 @@ class CarlaEnv(gym.Env):
         if not self.save_camera_frames or self.output_dir is None or self.config is None:
             return
 
-        scenario_name = f"Scenario{self.config.scenario_id}"
-        map_name = self.world.get_map().name.split('/')[-1]
-        base_dir = os.path.join(
-            self.output_dir,
-            f"{scenario_name}_{map_name}",
-            "camera_frames",
-            f"data_{self.config.data_id:04d}"
-        )
+        base_dir = self._get_scene_output_base_dir()
         os.makedirs(base_dir, exist_ok=True)
         self._update_scene_metadata_result(base_dir)
         result_path = os.path.join(base_dir, 'scene_result.json')

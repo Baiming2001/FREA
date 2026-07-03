@@ -100,6 +100,7 @@ class RouteScenario():
                 'leading_post_merge_speed_mps': 8.0,
                 'leading_lookahead_distance_m': 10.0,
                 'leading_min_travel_distance_m': 14.0,
+                'min_leading_ego_distance_m': 12.0,
                 'other_distance_back_m': 7.0,
                 'other_use_adjacent_lane': False,
                 'other_target_speed_mps': 8.0,
@@ -252,6 +253,43 @@ class RouteScenario():
                 roll=float(transform_dict.get('roll', 0.0))
             )
         )
+
+    def _enforce_min_leading_distance(self, ego_start_waypoint, anchor_waypoint, roadside_transform, scenario_params):
+        min_distance = float(scenario_params.get('min_leading_ego_distance_m', 12.0))
+        ego_location = ego_start_waypoint.transform.location
+        if roadside_transform.location.distance(ego_location) >= min_distance:
+            return anchor_waypoint, roadside_transform
+
+        lane_type_label = str(scenario_params.get('leading_lane_type', 'parking')).lower()
+        roadside_lane_type = carla.LaneType.Parking if lane_type_label == 'parking' else carla.LaneType.Shoulder
+        roadside_waypoint = self.world.get_map().get_waypoint(
+            roadside_transform.location,
+            project_to_road=False,
+            lane_type=roadside_lane_type
+        )
+        if roadside_waypoint is None:
+            roadside_waypoint = self.world.get_map().get_waypoint(
+                roadside_transform.location,
+                project_to_road=True,
+                lane_type=carla.LaneType.Driving
+            )
+
+        adjusted_anchor = anchor_waypoint
+        adjusted_roadside = roadside_waypoint
+        for _ in range(10):
+            if roadside_transform.location.distance(ego_location) >= min_distance:
+                break
+            next_anchor = adjusted_anchor.next(2.0) if adjusted_anchor is not None else []
+            next_roadside = adjusted_roadside.next(2.0) if adjusted_roadside is not None else []
+            if next_anchor:
+                adjusted_anchor = next_anchor[0]
+            if next_roadside:
+                adjusted_roadside = next_roadside[0]
+                roadside_transform = adjusted_roadside.transform
+            elif next_anchor:
+                roadside_transform = adjusted_anchor.transform
+
+        return adjusted_anchor, roadside_transform
 
     def _shift_waypoint(self, waypoint, distance, forward=True):
         if waypoint is None:
@@ -461,6 +499,13 @@ class RouteScenario():
             )
             if ego_start_waypoint is None:
                 raise RuntimeError('Failed to resolve custom Scenario 2 ego start waypoint')
+
+            anchor_waypoint, roadside_transform = self._enforce_min_leading_distance(
+                ego_start_waypoint,
+                anchor_waypoint,
+                roadside_transform,
+                scenario_params
+            )
 
             if scenario_params.get('other_use_adjacent_lane', False):
                 other_waypoint = self._resolve_scenario3_other_waypoint(ego_start_waypoint, scenario_params)
