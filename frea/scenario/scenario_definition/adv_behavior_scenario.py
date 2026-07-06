@@ -101,6 +101,7 @@ class AdvBehaviorSingle(BasicScenario):
 
         actor_location = CarlaDataProvider.get_location(actor)
         route_index = self.special_actor_route_indices.get(role_name, 0)
+        distance_to_current = actor_location.distance(route[route_index].location)
 
         while route_index < len(route) - 1:
             distance_to_current = actor_location.distance(route[route_index].location)
@@ -109,7 +110,18 @@ class AdvBehaviorSingle(BasicScenario):
             route_index += 1
 
         self.special_actor_route_indices[role_name] = route_index
-        target_index = min(route_index + lookahead_steps, len(route) - 1)
+        distance_to_current = actor_location.distance(route[route_index].location)
+
+        # When an actor starts from a parking/roadside position, first steer it toward
+        # the nearest merge point instead of immediately aiming far down the route.
+        if distance_to_current > reach_threshold_m * 1.5:
+            adaptive_lookahead_steps = 0
+        elif distance_to_current > reach_threshold_m:
+            adaptive_lookahead_steps = min(2, lookahead_steps)
+        else:
+            adaptive_lookahead_steps = lookahead_steps
+
+        target_index = min(route_index + adaptive_lookahead_steps, len(route) - 1)
         self.scenario_operation.drive_to_target_followlane(actor_index, route[target_index], target_speed)
         return True
 

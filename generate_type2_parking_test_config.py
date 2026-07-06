@@ -72,6 +72,12 @@ def parse_args():
         default="pilot",
         help="Split label written into parameters.",
     )
+    parser.add_argument(
+        "--min-route-progress",
+        type=float,
+        default=0.1,
+        help="Drop candidates whose leading route progress ratio is below this threshold.",
+    )
     return parser.parse_args()
 
 
@@ -86,6 +92,21 @@ def route_priority(route_entry):
         route_entry["town"],
         route_entry["source_scenario_id"],
         route_entry["route_id"],
+    )
+
+
+def candidate_geometry_key(route_entry):
+    candidate = route_entry["best_candidate"]
+    driving = candidate["driving_transform"]
+    roadside = candidate["roadside_transform"]
+    return (
+        route_entry["town"],
+        round(float(driving["x"]), 3),
+        round(float(driving["y"]), 3),
+        round(float(driving.get("yaw", 0.0)), 3),
+        round(float(roadside["x"]), 3),
+        round(float(roadside["y"]), 3),
+        round(float(roadside.get("yaw", 0.0)), 3),
     )
 
 
@@ -122,6 +143,8 @@ def main():
             continue
         if candidate.get("lane_type") != "parking":
             continue
+        if float(candidate.get("route_progress_ratio", 0.0)) < args.min_route_progress:
+            continue
         if args.towns is not None and route_entry["town"] not in args.towns:
             continue
         if args.source_scenarios is not None and route_entry["source_scenario_id"] not in args.source_scenarios:
@@ -129,6 +152,16 @@ def main():
         filtered_routes.append(route_entry)
 
     filtered_routes.sort(key=route_priority)
+    unique_routes = []
+    seen_geometry = set()
+    for route_entry in filtered_routes:
+        geometry_key = candidate_geometry_key(route_entry)
+        if geometry_key in seen_geometry:
+            continue
+        seen_geometry.add(geometry_key)
+        unique_routes.append(route_entry)
+
+    filtered_routes = unique_routes
     if args.max_routes is not None:
         filtered_routes = filtered_routes[: args.max_routes]
 
