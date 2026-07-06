@@ -520,6 +520,7 @@ class RouteScenario():
             self._spawn_special_actor('other', other_waypoint.transform, scenario_params['other_vehicle_model'])
             special_actor_routes = {
                 'leading': self._build_special_actor_route(anchor_waypoint),
+                'other': self._build_special_actor_route(other_waypoint),
             }
             self.scenario_instance.set_special_actors(self.special_actors, scenario_params, special_actor_routes)
             return

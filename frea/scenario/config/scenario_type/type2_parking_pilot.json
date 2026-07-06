@@ -391,7 +391,139 @@
                                                               "x":  -134.91,
                                                               "y":  -76.933,
                                                               "z":  0.0,
-                                                              "yaw":  90.394
+                                                          "yaw":  90.394
+                                                      }
+                   }
+    },
+    {
+        "data_id":  12,
+        "scenario_id":  2,
+        "route_id":  9,
+        "risk_level":  null,
+        "parameters":  {
+                           "scenario_type_id":  2,
+                           "scenario_subtype_id":  1,
+                           "scenario_number":  13,
+                           "target_outcome":  "normal",
+                           "split_name":  "pilot",
+                           "source_town":  "Town05",
+                           "source_scenario_id":  2,
+                           "source_route_file":  "/home/ubuntu/baiming/FREA/frea/scenario/scenario_data/route/scenario_02_routes/scenario_02_route_09.xml",
+                           "leading_spawn_mode":  "parking",
+                           "leading_spawn_side":  "right",
+                           "leading_lane_type":  "parking",
+                           "leading_route_progress_ratio":  0.0,
+                           "leading_lateral_distance_m":  3.25,
+                           "leading_driving_anchor_transform":  {
+                                                                    "x":  -121.51,
+                                                                    "y":  -25.894,
+                                                                    "z":  0.0,
+                                                                    "yaw":  270.394
+                                                                },
+                           "leading_roadside_transform":  {
+                                                              "x":  -118.26,
+                                                              "y":  -25.872,
+                                                              "z":  0.0,
+                                                              "yaw":  270.394
+                                                          }
+                       }
+    },
+    {
+        "data_id":  13,
+        "scenario_id":  2,
+        "route_id":  9,
+        "risk_level":  null,
+        "parameters":  {
+                           "scenario_type_id":  2,
+                           "scenario_subtype_id":  1,
+                           "scenario_number":  14,
+                           "target_outcome":  "collision",
+                           "split_name":  "pilot",
+                           "source_town":  "Town05",
+                           "source_scenario_id":  2,
+                           "source_route_file":  "/home/ubuntu/baiming/FREA/frea/scenario/scenario_data/route/scenario_02_routes/scenario_02_route_09.xml",
+                           "leading_spawn_mode":  "parking",
+                           "leading_spawn_side":  "right",
+                           "leading_lane_type":  "parking",
+                           "leading_route_progress_ratio":  0.0,
+                           "leading_lateral_distance_m":  3.25,
+                           "leading_driving_anchor_transform":  {
+                                                                    "x":  -121.51,
+                                                                    "y":  -25.894,
+                                                                    "z":  0.0,
+                                                                    "yaw":  270.394
+                                                                },
+                           "leading_roadside_transform":  {
+                                                              "x":  -118.26,
+                                                              "y":  -25.872,
+                                                              "z":  0.0,
+                                                              "yaw":  270.394
+                                                          }
+                       }
+    },
+    {
+        "data_id":  14,
+        "scenario_id":  7,
+        "route_id":  11,
+        "risk_level":  null,
+        "parameters":  {
+                           "scenario_type_id":  2,
+                           "scenario_subtype_id":  1,
+                           "scenario_number":  15,
+                           "target_outcome":  "normal",
+                           "split_name":  "pilot",
+                           "source_town":  "Town05",
+                           "source_scenario_id":  7,
+                           "source_route_file":  "/home/ubuntu/baiming/FREA/frea/scenario/scenario_data/route/scenario_07_routes/scenario_07_route_11.xml",
+                           "leading_spawn_mode":  "parking",
+                           "leading_spawn_side":  "right",
+                           "leading_lane_type":  "parking",
+                           "leading_route_progress_ratio":  0.0,
+                           "leading_lateral_distance_m":  3.25,
+                           "leading_driving_anchor_transform":  {
+                                                                    "x":  -121.51,
+                                                                    "y":  -25.894,
+                                                                    "z":  0.0,
+                                                                    "yaw":  270.394
+                                                                },
+                           "leading_roadside_transform":  {
+                                                              "x":  -118.26,
+                                                              "y":  -25.872,
+                                                              "z":  0.0,
+                                                              "yaw":  270.394
+                                                          }
+                       }
+    },
+    {
+        "data_id":  15,
+        "scenario_id":  7,
+        "route_id":  11,
+        "risk_level":  null,
+        "parameters":  {
+                           "scenario_type_id":  2,
+                           "scenario_subtype_id":  1,
+                           "scenario_number":  16,
+                           "target_outcome":  "collision",
+                           "split_name":  "pilot",
+                           "source_town":  "Town05",
+                           "source_scenario_id":  7,
+                           "source_route_file":  "/home/ubuntu/baiming/FREA/frea/scenario/scenario_data/route/scenario_07_routes/scenario_07_route_11.xml",
+                           "leading_spawn_mode":  "parking",
+                           "leading_spawn_side":  "right",
+                           "leading_lane_type":  "parking",
+                           "leading_route_progress_ratio":  0.0,
+                           "leading_lateral_distance_m":  3.25,
+                           "leading_driving_anchor_transform":  {
+                                                                    "x":  -121.51,
+                                                                    "y":  -25.894,
+                                                                    "z":  0.0,
+                                                                    "yaw":  270.394
+                                                                },
+                           "leading_roadside_transform":  {
+                                                              "x":  -118.26,
+                                                              "y":  -25.872,
+                                                              "z":  0.0,
+                                                              "yaw":  270.394
                                                           }
                        }
     }

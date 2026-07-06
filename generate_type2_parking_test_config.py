@@ -75,8 +75,13 @@ def parse_args():
     parser.add_argument(
         "--min-route-progress",
         type=float,
-        default=0.1,
-        help="Drop candidates whose leading route progress ratio is below this threshold.",
+        default=0.0,
+        help="Optionally drop candidates whose leading route progress ratio is below this threshold.",
+    )
+    parser.add_argument(
+        "--dedupe-geometry",
+        action="store_true",
+        help="Keep only one route per identical parking/driving geometry footprint.",
     )
     return parser.parse_args()
 
@@ -152,16 +157,16 @@ def main():
         filtered_routes.append(route_entry)
 
     filtered_routes.sort(key=route_priority)
-    unique_routes = []
-    seen_geometry = set()
-    for route_entry in filtered_routes:
-        geometry_key = candidate_geometry_key(route_entry)
-        if geometry_key in seen_geometry:
-            continue
-        seen_geometry.add(geometry_key)
-        unique_routes.append(route_entry)
-
-    filtered_routes = unique_routes
+    if args.dedupe_geometry:
+        unique_routes = []
+        seen_geometry = set()
+        for route_entry in filtered_routes:
+            geometry_key = candidate_geometry_key(route_entry)
+            if geometry_key in seen_geometry:
+                continue
+            seen_geometry.add(geometry_key)
+            unique_routes.append(route_entry)
+        filtered_routes = unique_routes
     if args.max_routes is not None:
         filtered_routes = filtered_routes[: args.max_routes]
 
