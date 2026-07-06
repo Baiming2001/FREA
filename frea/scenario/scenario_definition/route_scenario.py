@@ -547,8 +547,13 @@ class RouteScenario():
 
         actor_location = actor_waypoint.transform.location
         actor_forward = actor_waypoint.transform.get_forward_vector()
+        actor_lane_id = actor_waypoint.lane_id
+        actor_road_id = actor_waypoint.road_id
+        carla_map = self.world.get_map()
         best_index = None
         best_distance = float('inf')
+        best_same_lane_index = None
+        best_same_lane_distance = float('inf')
 
         for index, (route_transform, _) in enumerate(self.route):
             route_location = route_transform.location
@@ -561,9 +566,27 @@ class RouteScenario():
                 continue
 
             distance = route_location.distance(actor_location)
+            route_waypoint = carla_map.get_waypoint(
+                route_location,
+                project_to_road=True,
+                lane_type=carla.LaneType.Driving
+            )
+            if (
+                route_waypoint is not None
+                and route_waypoint.road_id == actor_road_id
+                and route_waypoint.lane_id == actor_lane_id
+                and self._is_same_direction_lane(actor_waypoint, route_waypoint, min_dot=0.85)
+                and distance < best_same_lane_distance
+            ):
+                best_same_lane_distance = distance
+                best_same_lane_index = index
+
             if distance < best_distance:
                 best_distance = distance
                 best_index = index
+
+        if best_same_lane_index is not None:
+            best_index = best_same_lane_index
 
         if best_index is None:
             return []

@@ -1,0 +1,5 @@
+powershell -ExecutionPolicy Bypass -File "D:\masterarbeit\FREA\FREA\scripts\images_to_video.ps1" `
+  -InputDir "D:\your\images" `
+  -OutputFile "result.mp4" `
+  -Framerate 30 `
+  -Overwrite
