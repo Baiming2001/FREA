@@ -117,6 +117,8 @@ class RouteScenario():
                 'scene_end_after_stop_seconds': 0.5,
                 'ego_reaction_delay_seconds': 0.0,
                 'ego_min_throttle_during_delay': 0.0,
+                'route_start_ratio': 0.0,
+                'route_start_min_remaining_points': 8,
                 'trigger_position_x': trigger_position.get('x'),
                 'trigger_position_y': trigger_position.get('y'),
                 'trigger_position_z': trigger_position.get('z'),
@@ -167,6 +169,12 @@ class RouteScenario():
             target_outcome = str(parameters.get('target_outcome', scenario2_defaults['target_outcome'])).lower()
             scenario2_defaults.update(outcome_profiles.get(target_outcome, {}))
             scenario2_defaults.update(parameters)
+            if (
+                str(scenario2_defaults.get('leading_spawn_mode', '')).lower() == 'parking'
+                and 'route_start_ratio' not in parameters
+            ):
+                leading_route_progress = float(scenario2_defaults.get('leading_route_progress_ratio', 0.0))
+                scenario2_defaults['route_start_ratio'] = max(0.0, min(0.65, leading_route_progress - 0.12))
             scenario2_defaults['target_outcome'] = target_outcome
             self.config.parameters = copy.deepcopy(scenario2_defaults)
             return scenario2_defaults
@@ -518,8 +526,13 @@ class RouteScenario():
                     raise RuntimeError('Failed to place custom Scenario 2 other vehicle behind ego on the same lane')
             self._spawn_special_actor('leading', roadside_transform, scenario_params['leading_vehicle_model'])
             self._spawn_special_actor('other', other_waypoint.transform, scenario_params['other_vehicle_model'])
+            leading_route = self._build_special_actor_route(anchor_waypoint)
+            if str(scenario_params.get('leading_spawn_mode', '')).lower() == 'parking':
+                lane_continuation_route = self._build_lane_continuation_route(anchor_waypoint)
+                if lane_continuation_route:
+                    leading_route = lane_continuation_route
             special_actor_routes = {
-                'leading': self._build_special_actor_route(anchor_waypoint),
+                'leading': leading_route,
                 'other': self._build_special_actor_route(other_waypoint),
             }
             self.scenario_instance.set_special_actors(self.special_actors, scenario_params, special_actor_routes)
@@ -597,6 +610,36 @@ class RouteScenario():
             return []
         return remaining_route
 
+    def _build_lane_continuation_route(self, actor_waypoint, step_distance=5.0, max_points=30):
+        if actor_waypoint is None:
+            return []
+
+        route = [actor_waypoint.transform]
+        current_waypoint = actor_waypoint
+
+        for _ in range(max_points - 1):
+            next_waypoints = current_waypoint.next(step_distance)
+            if not next_waypoints:
+                break
+
+            same_lane_candidates = [
+                candidate for candidate in next_waypoints
+                if candidate.road_id == current_waypoint.road_id
+                and candidate.lane_id == current_waypoint.lane_id
+                and self._is_same_direction_lane(current_waypoint, candidate, min_dot=0.85)
+            ]
+            if same_lane_candidates:
+                current_waypoint = same_lane_candidates[0]
+            else:
+                directional_candidates = [
+                    candidate for candidate in next_waypoints
+                    if self._is_same_direction_lane(current_waypoint, candidate, min_dot=0.85)
+                ]
+                current_waypoint = directional_candidates[0] if directional_candidates else next_waypoints[0]
+            route.append(current_waypoint.transform)
+
+        return route if len(route) >= 2 else []
+
     def _initialize_scenario3_actors(self):
         scenario_params = self._get_scenario_parameters()
         carla_map = self.world.get_map()
@@ -644,10 +687,17 @@ class RouteScenario():
                     break
         else:
             route_start_ratio = 0.0
+            route_start_min_remaining_points = 20
             if self.config.parameters is not None:
                 route_start_ratio = self.config.parameters.get('route_start_ratio', 0.0)
+                route_start_min_remaining_points = self.config.parameters.get('route_start_min_remaining_points', 20)
             gps_route, route = interpolate_trajectory(self.world, self.config.trajectory)
-            gps_route, route = self._slice_dense_route_for_route_start(gps_route, route, route_start_ratio)
+            gps_route, route = self._slice_dense_route_for_route_start(
+                gps_route,
+                route,
+                route_start_ratio,
+                min_remaining_points=int(route_start_min_remaining_points)
+            )
             ego_vehicle = self._spawn_ego_vehicle(route[0][0], self.config.auto_ego)
 
         CarlaDataProvider.set_ego_vehicle_route(ego_vehicle, convert_transform_to_location(route))
