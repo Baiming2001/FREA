@@ -91,6 +91,12 @@ def parse_args():
         default=8,
         help="How many candidate points to keep per route in the JSON output.",
     )
+    parser.add_argument(
+        "--min-distance-to-junction",
+        type=float,
+        default=12.0,
+        help="Skip roadside candidates whose driving anchor is too close to a junction.",
+    )
     return parser.parse_args()
 
 
@@ -183,6 +189,25 @@ def build_candidate_record(carla_module, driving_waypoint, roadside_waypoint, la
             "yaw": round(roadside_waypoint.transform.rotation.yaw, 3),
         },
     }
+
+
+def distance_to_junction_along_lane(waypoint, step_distance=2.0, max_distance=30.0):
+    if waypoint is None:
+        return None
+    if waypoint.is_junction:
+        return 0.0
+
+    traveled = 0.0
+    current_waypoint = waypoint
+    while traveled < max_distance:
+        next_waypoints = current_waypoint.next(step_distance)
+        if not next_waypoints:
+            return None
+        current_waypoint = next_waypoints[0]
+        traveled += step_distance
+        if current_waypoint.is_junction:
+            return traveled
+    return None
 
 
 def route_candidate_priority(candidate):
@@ -290,6 +315,12 @@ def scan_route(world, route_config, args, carla_module):
         for lane_side in ("right", "left"):
             roadside_waypoint = find_roadside_candidate(carla_module, driving_waypoint, lane_side)
             if roadside_waypoint is None:
+                continue
+            junction_distance = distance_to_junction_along_lane(driving_waypoint)
+            if (
+                junction_distance is not None
+                and junction_distance < float(args.min_distance_to_junction)
+            ):
                 continue
 
             candidates.append(
