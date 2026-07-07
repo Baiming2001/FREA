@@ -125,8 +125,8 @@ class AdvBehaviorSingle(BasicScenario):
         self.scenario_operation.drive_to_target_followlane(actor_index, route[target_index], target_speed)
         return True
 
-    def _follow_lane_with_pid(self, role_name, target_speed, lookahead_distance=8.0):
-        if self._follow_route_with_pid(role_name, target_speed):
+    def _follow_lane_with_pid(self, role_name, target_speed, lookahead_distance=8.0, prefer_route=True):
+        if prefer_route and self._follow_route_with_pid(role_name, target_speed):
             return
 
         actor = self.special_actors.get(role_name)
@@ -261,7 +261,12 @@ class AdvBehaviorSingle(BasicScenario):
 
             if released:
                 target_speed = leading_post_merge_speed if leading_travel_distance >= leading_min_travel_distance else leading_speed
-                self._follow_lane_with_pid('leading', target_speed, lookahead_distance=leading_lookahead_distance)
+                self._follow_lane_with_pid(
+                    'leading',
+                    target_speed,
+                    lookahead_distance=leading_lookahead_distance,
+                    prefer_route=True
+                )
             else:
                 self.scenario_operation.brake(leading_actor)
 
