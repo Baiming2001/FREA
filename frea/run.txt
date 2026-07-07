@@ -13,3 +13,29 @@ python D:\masterarbeit\FREA\FREA\generate_type2_parking_test_config.py `
 python3 generate_type2_batch_config.py \
   --input /path/to/FREA/frea/scenario/config/scenario_type/type2_route_scan.json \
   --output /path/to/FREA/frea/scenario/config/scenario_type/type2_parking_75.json
+
+python scripts/run.py \
+  --agent_cfg expert.yaml \
+  --mode eval \
+  --eval_mode render \
+  --num_scenario 1 \
+  --save_camera_frames \
+  --camera_fps 10 \
+  --camera_only \
+  --progress_interval 20 \
+  --scenario_cfg standard_eval_type2_parking_pilot.yaml \
+  --data_id 0 \
+  --output_dir /home/ubuntu/baiming/FREA/outputs/type2_pilot_debug/data_0
+
+python scripts/run.py \
+  --agent_cfg expert.yaml \
+  --mode eval \
+  --eval_mode render \
+  --num_scenario 1 \
+  --save_camera_frames \
+  --camera_fps 10 \
+  --camera_only \
+  --progress_interval 20 \
+  --scenario_cfg standard_eval_type2_parking_pilot.yaml \
+  --data_id 1 \
+  --output_dir /home/ubuntu/baiming/FREA/outputs/type2_pilot_debug/data_1

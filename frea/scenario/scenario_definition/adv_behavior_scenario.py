@@ -227,6 +227,7 @@ class AdvBehaviorSingle(BasicScenario):
             leading_post_merge_speed = float(self.scripted_parameters.get('leading_post_merge_speed_mps', leading_speed))
             leading_lookahead_distance = float(self.scripted_parameters.get('leading_lookahead_distance_m', 10.0))
             leading_min_travel_distance = float(self.scripted_parameters.get('leading_min_travel_distance_m', 14.0))
+            leading_prefer_special_route = bool(self.scripted_parameters.get('leading_prefer_special_route', True))
             ego_clear_distance = float(self.scripted_parameters.get('ego_clear_distance_m', 22.0))
             other_base_speed = float(self.scripted_parameters.get('other_target_speed_mps', 8.0))
             other_speed_variation = float(self.scripted_parameters.get('other_speed_variation_mps', 0.1))
@@ -265,7 +266,7 @@ class AdvBehaviorSingle(BasicScenario):
                     'leading',
                     target_speed,
                     lookahead_distance=leading_lookahead_distance,
-                    prefer_route=True
+                    prefer_route=leading_prefer_special_route
                 )
             else:
                 self.scenario_operation.brake(leading_actor)
