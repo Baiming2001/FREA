@@ -115,6 +115,7 @@ def write_batches(
     scenario_type_root=None,
 ):
     num_batches = 0
+    output_dir.mkdir(parents=True, exist_ok=True)
     for start_idx in range(0, len(entries), batch_size):
         batch_entries = entries[start_idx:start_idx + batch_size]
         batch_start_data_id = batch_entries[0]["data_id"]
