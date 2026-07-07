@@ -1,11 +1,15 @@
-python generate_type2_batch_config.py \
+python generate_type2_parking_test_config.py \
   --input /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_route_scan_all_routes.json \
   --output /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_parking_pilot.json
 
-python D:\masterarbeit\FREA\FREA\generate_type2_batch_config.py `
+python D:\masterarbeit\FREA\FREA\generate_type2_parking_test_config.py `
   --input D:\masterarbeit\FREA\FREA\your_scan_result.json `
   --output D:\masterarbeit\FREA\FREA\frea\scenario\config\scenario_type\type2_parking_75.json `
   --split-json-dir D:\masterarbeit\FREA\FREA\frea\scenario\config\scenario_type\type2_parking_75_splits `
   --base-yaml D:\masterarbeit\FREA\FREA\frea\scenario\config\standard_eval_type2_parking_pilot.yaml `
   --yaml-output D:\masterarbeit\FREA\FREA\frea\scenario\config\standard_eval_type2_parking_75.yaml `
   --split-yaml-dir D:\masterarbeit\FREA\FREA\frea\scenario\config
+
+python3 generate_type2_batch_config.py \
+  --input /path/to/FREA/frea/scenario/config/scenario_type/type2_route_scan.json \
+  --output /path/to/FREA/frea/scenario/config/scenario_type/type2_parking_75.json
