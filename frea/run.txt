@@ -39,3 +39,23 @@ python scripts/run.py \
   --scenario_cfg standard_eval_type2_parking_pilot.yaml \
   --data_id 1 \
   --output_dir /home/ubuntu/baiming/FREA/outputs/type2_pilot_debug/data_1
+
+python3 scan_type2_roadside_routes.py \
+  --root-dir /home/ubuntu/baiming/FREA \
+  --scenario-ids 1 5 \
+  --towns Town05 \
+  --min-route-progress 0.05 \
+  --max-route-progress 0.7 \
+  --min-distance-to-junction 12.0 \
+  --output /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_route_scan.json
+
+python3 generate_type2_batch_config.py \
+  --input /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_route_scan.json \
+  --output /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_parking_pilot.json \
+  --total-scenes 12 \
+  --allowed-routes 1:9 5:4 5:5 5:6 5:8 5:10 \
+  --split-weights pilot=1 \
+  --outcome-weights normal=1 collision=1 \
+  --weather-weights clear=1 \
+  --time-weights noon=1 \
+  --seed 0
