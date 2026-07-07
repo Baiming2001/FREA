@@ -38,7 +38,7 @@ DEFAULT_LEADING_VEHICLE_MODELS = [
     "vehicle.tesla.model3",
     "vehicle.audi.tt",
     "vehicle.mercedes.coupe",
-    "vehicle.nissan.patrol",
+    "vehicle.audi.etron",
 ]
 DEFAULT_EGO_VEHICLE_MODELS = [
     "vehicle.lincoln.mkz_2017",
@@ -51,6 +51,16 @@ DEFAULT_OTHER_VEHICLE_MODELS = [
     "vehicle.lincoln.mkz_2017",
     "vehicle.tesla.model3",
 ]
+DISALLOWED_VEHICLE_MODEL_KEYWORDS = (
+    "firetruck",
+    "ambulance",
+    "truck",
+    "bus",
+    "van",
+    "sprinter",
+    "patrol",
+    "carlacola",
+)
 
 
 def parse_args():
@@ -237,6 +247,14 @@ def parse_args():
         default=DEFAULT_OTHER_VEHICLE_MODELS,
         help="Candidate CARLA blueprint ids used to randomize the other vehicle model.",
     )
+    parser.add_argument(
+        "--pilot-paired-outcomes",
+        action="store_true",
+        help=(
+            "Generate exactly one normal and one collision scene per selected route. "
+            "Useful for pilot configs."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -338,7 +356,12 @@ def weighted_choice(rng, weight_map):
 
 
 def choose_from_candidates(rng, values, label):
-    candidates = [value.strip() for value in values if str(value).strip()]
+    candidates = [
+        value.strip()
+        for value in values
+        if str(value).strip()
+        and not any(keyword in value.strip().lower() for keyword in DISALLOWED_VEHICLE_MODEL_KEYWORDS)
+    ]
     if not candidates:
         raise ValueError(f"At least one candidate is required for {label}.")
     return rng.choice(candidates)
@@ -431,6 +454,31 @@ def allocate_route_counts(route_entries, total_scenes, rng):
     return counts
 
 
+def allocate_route_outcomes(route_entries, route_counts, outcome_pool, rng, paired_outcomes=False):
+    route_outcomes = {}
+    if paired_outcomes:
+        for route_entry in route_entries:
+            route_key = (route_entry["source_scenario_id"], route_entry["route_id"])
+            route_count = route_counts[route_key]
+            if route_count != 2:
+                raise ValueError(
+                    "When --pilot-paired-outcomes is enabled, each selected route must receive exactly 2 scenes. "
+                    f"Route {route_key[0]}:{route_key[1]} received {route_count}."
+                )
+            route_outcomes[route_key] = ["normal", "collision"]
+        return route_outcomes
+
+    shuffled_outcomes = list(outcome_pool)
+    rng.shuffle(shuffled_outcomes)
+    cursor = 0
+    for route_entry in route_entries:
+        route_key = (route_entry["source_scenario_id"], route_entry["route_id"])
+        route_count = route_counts[route_key]
+        route_outcomes[route_key] = shuffled_outcomes[cursor: cursor + route_count]
+        cursor += route_count
+    return route_outcomes
+
+
 def build_parameters(
     args,
     route_entry,
@@ -478,6 +526,13 @@ def build_entries(args, route_entries):
     route_counts = allocate_route_counts(route_entries, args.total_scenes, rng)
     split_pool, split_quotas = build_balanced_label_pool(args.total_scenes, split_weights, rng)
     outcome_pool, outcome_quotas = build_balanced_label_pool(args.total_scenes, outcome_weights, rng)
+    route_outcomes = allocate_route_outcomes(
+        route_entries,
+        route_counts,
+        outcome_pool,
+        rng,
+        paired_outcomes=args.pilot_paired_outcomes,
+    )
 
     entries = []
     data_id = args.start_data_id
@@ -485,9 +540,8 @@ def build_entries(args, route_entries):
 
     for route_entry in route_entries:
         route_key = (route_entry["source_scenario_id"], route_entry["route_id"])
-        for _ in range(route_counts[route_key]):
+        for outcome in route_outcomes[route_key]:
             split_name = split_pool.pop()
-            outcome = outcome_pool.pop()
             weather_label = weighted_choice(rng, weather_weights)
             time_of_day_label = weighted_choice(rng, time_weights)
             leading_vehicle_model = choose_from_candidates(

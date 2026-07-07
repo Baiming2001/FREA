@@ -309,11 +309,14 @@ class AdvBehaviorSingle(BasicScenario):
             if released:
                 merge_completed = leading_travel_distance >= leading_min_travel_distance
                 target_speed = leading_post_merge_speed if merge_completed else leading_speed
+                prefer_special_route = leading_prefer_special_route and (
+                    merge_completed or target_outcome == 'collision'
+                )
                 self._follow_lane_with_pid(
                     'leading',
                     target_speed,
                     lookahead_distance=leading_lookahead_distance,
-                    prefer_route=(leading_prefer_special_route and merge_completed)
+                    prefer_route=prefer_special_route
                 )
             else:
                 self.scenario_operation.brake(leading_actor)

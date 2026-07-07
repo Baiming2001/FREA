@@ -134,7 +134,7 @@ class RouteScenario():
                     'leading_post_merge_speed_mps': 6.0,
                     'leading_lookahead_distance_m': 6.0,
                     'leading_min_travel_distance_m': 8.0,
-                    'leading_prefer_special_route': False,
+                    'leading_prefer_special_route': True,
                     'other_use_adjacent_lane': False,
                     'other_distance_back_m': 7.0,
                     'other_target_speed_mps': 9.0,
