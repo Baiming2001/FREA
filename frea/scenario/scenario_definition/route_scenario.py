@@ -129,8 +129,9 @@ class RouteScenario():
             outcome_profiles = {
                 'collision': {
                     'leading_release_distance_m': 7.5,
-                    'leading_target_speed_mps': 7.5,
-                    'leading_post_merge_speed_mps': 4.5,
+                    'leading_collision_release_after_pass_m': 2.5,
+                    'leading_target_speed_mps': 9.0,
+                    'leading_post_merge_speed_mps': 6.0,
                     'leading_lookahead_distance_m': 6.0,
                     'leading_min_travel_distance_m': 8.0,
                     'leading_prefer_special_route': False,
@@ -147,8 +148,8 @@ class RouteScenario():
                     'other_start_boost_speed_threshold_mps': 5.5,
                     'ego_clear_distance_m': 18.0,
                     'ego_reaction_delay_seconds': 3.0,
-                    'ego_min_throttle_during_delay': 0.4,
-                    'ego_force_no_brake_distance_m': 18.0,
+                    'ego_min_throttle_during_delay': 0.5,
+                    'ego_force_no_brake_distance_m': 24.0,
                     'ego_max_brake_during_collision_window': 0.02,
                 },
                 'normal': {

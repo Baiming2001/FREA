@@ -290,14 +290,16 @@ class AdvBehaviorSingle(BasicScenario):
             if not released:
                 should_release = anchor_distance <= release_distance
                 if target_outcome == 'collision' and anchor_longitudinal is not None:
-                    # For collision scenes, keep the parked car waiting until ego is nearly alongside
-                    # the parking anchor instead of using a coarse Euclidean trigger.
-                    collision_release_margin = min(2.0, release_distance * 0.25)
-                    max_lateral_for_collision = max(5.0, release_distance)
+                    # For collision scenes, keep the parked car waiting until ego has already
+                    # passed the parking anchor, then pull out decisively into ego's path.
+                    release_after_pass_m = float(
+                        self.scripted_parameters.get('leading_collision_release_after_pass_m', 2.5)
+                    )
+                    max_lateral_for_collision = max(4.5, release_distance * 0.75)
                     should_release = (
                         anchor_lateral is not None
                         and anchor_lateral <= max_lateral_for_collision
-                        and anchor_longitudinal >= -collision_release_margin
+                        and anchor_longitudinal >= release_after_pass_m
                     )
                 if should_release:
                     released = True
