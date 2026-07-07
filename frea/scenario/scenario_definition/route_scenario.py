@@ -369,8 +369,9 @@ class RouteScenario():
         if anchor_waypoint is None or route is None or len(route) <= min_remaining_points:
             return gps_route, route
 
+        target_start_waypoint = self._resolve_scenario2_ego_start_waypoint(anchor_waypoint, back_distance)
         anchor_location = anchor_waypoint.transform.location
-        anchor_forward = anchor_waypoint.transform.get_forward_vector()
+        target_location = target_start_waypoint.transform.location if target_start_waypoint is not None else anchor_location
         best_index = None
         best_score = float('inf')
         fallback_index = None
@@ -393,30 +394,70 @@ class RouteScenario():
             if not self._is_same_direction_lane(anchor_waypoint, route_waypoint, min_dot=0.85):
                 continue
 
-            delta_x = route_transform.location.x - anchor_location.x
-            delta_y = route_transform.location.y - anchor_location.y
-            longitudinal = delta_x * anchor_forward.x + delta_y * anchor_forward.y
-            if longitudinal >= -1.0:
+            if not self._is_waypoint_behind_reference(anchor_waypoint, route_waypoint, min_back_distance=1.0):
                 continue
 
-            distance_back = abs(longitudinal)
-            score = abs(distance_back - back_distance)
+            score = route_transform.location.distance(target_location)
             if score < best_score:
                 best_score = score
                 best_index = index
-            if distance_back < fallback_score:
-                fallback_score = distance_back
+            anchor_distance = route_transform.location.distance(anchor_location)
+            if anchor_distance < fallback_score:
+                fallback_score = anchor_distance
                 fallback_index = index
 
         selected_index = best_index if best_index is not None else fallback_index
         if selected_index is None:
             return gps_route, route
 
-        sliced_route = route[selected_index:]
+        sliced_route = list(route[selected_index:])
         sliced_gps_route = gps_route[selected_index:] if gps_route is not None else gps_route
         if len(sliced_route) < min_remaining_points:
             return gps_route, route
+        if target_start_waypoint is not None:
+            sliced_route[0] = (target_start_waypoint.transform, sliced_route[0][1])
         return sliced_gps_route, sliced_route
+
+    def _resolve_scenario2_ego_start_waypoint(self, anchor_waypoint, back_distance):
+        if anchor_waypoint is None:
+            return None
+
+        candidates = anchor_waypoint.previous(float(back_distance))
+        same_lane_candidates = [
+            candidate for candidate in candidates
+            if candidate.road_id == anchor_waypoint.road_id
+            and candidate.lane_id == anchor_waypoint.lane_id
+            and self._is_same_direction_lane(anchor_waypoint, candidate, min_dot=0.85)
+        ]
+        if same_lane_candidates:
+            return same_lane_candidates[0]
+
+        current_waypoint = anchor_waypoint
+        remaining_distance = float(back_distance)
+        step_distance = 2.0
+        while remaining_distance > 0.5 and current_waypoint is not None:
+            step = min(step_distance, remaining_distance)
+            previous_candidates = current_waypoint.previous(step)
+            if not previous_candidates:
+                break
+            same_lane_candidates = [
+                candidate for candidate in previous_candidates
+                if candidate.road_id == anchor_waypoint.road_id
+                and candidate.lane_id == anchor_waypoint.lane_id
+                and self._is_same_direction_lane(anchor_waypoint, candidate, min_dot=0.85)
+            ]
+            current_waypoint = same_lane_candidates[0] if same_lane_candidates else previous_candidates[0]
+            remaining_distance -= step
+
+        if (
+            current_waypoint is not None
+            and current_waypoint.road_id == anchor_waypoint.road_id
+            and current_waypoint.lane_id == anchor_waypoint.lane_id
+            and self._is_same_direction_lane(anchor_waypoint, current_waypoint, min_dot=0.85)
+        ):
+            return current_waypoint
+
+        return anchor_waypoint
 
     def _get_adjacent_driving_lane(self, waypoint, lane_side):
         candidate = waypoint.get_left_lane() if lane_side == 'left' else waypoint.get_right_lane()
