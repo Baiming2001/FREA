@@ -34,6 +34,23 @@ DEFAULT_TIME_WEIGHTS = {
     "sunset": 1.0,
     "night": 1.0,
 }
+DEFAULT_LEADING_VEHICLE_MODELS = [
+    "vehicle.tesla.model3",
+    "vehicle.audi.tt",
+    "vehicle.mercedes.coupe",
+    "vehicle.nissan.patrol",
+]
+DEFAULT_EGO_VEHICLE_MODELS = [
+    "vehicle.lincoln.mkz_2017",
+    "vehicle.tesla.model3",
+    "vehicle.audi.etron",
+    "vehicle.mercedes.coupe",
+]
+DEFAULT_OTHER_VEHICLE_MODELS = [
+    "vehicle.audi.tt",
+    "vehicle.lincoln.mkz_2017",
+    "vehicle.tesla.model3",
+]
 
 
 def parse_args():
@@ -202,6 +219,24 @@ def parse_args():
         action="store_true",
         help="Keep only one route per identical parking/driving geometry footprint.",
     )
+    parser.add_argument(
+        "--leading-vehicle-models",
+        nargs="+",
+        default=DEFAULT_LEADING_VEHICLE_MODELS,
+        help="Candidate CARLA blueprint ids used to randomize the leading vehicle model.",
+    )
+    parser.add_argument(
+        "--ego-vehicle-models",
+        nargs="+",
+        default=DEFAULT_EGO_VEHICLE_MODELS,
+        help="Candidate CARLA blueprint ids used to randomize the ego vehicle model.",
+    )
+    parser.add_argument(
+        "--other-vehicle-models",
+        nargs="+",
+        default=DEFAULT_OTHER_VEHICLE_MODELS,
+        help="Candidate CARLA blueprint ids used to randomize the other vehicle model.",
+    )
     return parser.parse_args()
 
 
@@ -302,6 +337,13 @@ def weighted_choice(rng, weight_map):
     return rng.choices(labels, weights=weights, k=1)[0]
 
 
+def choose_from_candidates(rng, values, label):
+    candidates = [value.strip() for value in values if str(value).strip()]
+    if not candidates:
+        raise ValueError(f"At least one candidate is required for {label}.")
+    return rng.choice(candidates)
+
+
 def build_balanced_label_pool(total_count, weights, rng):
     quotas = compute_integer_quotas(total_count, weights)
     labels = []
@@ -397,6 +439,9 @@ def build_parameters(
     weather_label,
     time_of_day_label,
     scenario_number,
+    leading_vehicle_model,
+    ego_vehicle_model,
+    other_vehicle_model,
 ):
     candidate = route_entry["best_candidate"]
     return {
@@ -410,6 +455,9 @@ def build_parameters(
         "source_town": route_entry["town"],
         "source_scenario_id": route_entry["source_scenario_id"],
         "source_route_file": route_entry["route_file"],
+        "ego_vehicle_model": ego_vehicle_model,
+        "leading_vehicle_model": leading_vehicle_model,
+        "other_vehicle_model": other_vehicle_model,
         "leading_spawn_mode": "parking",
         "leading_spawn_side": candidate["lane_side"],
         "leading_lane_type": candidate["lane_type"],
@@ -442,6 +490,15 @@ def build_entries(args, route_entries):
             outcome = outcome_pool.pop()
             weather_label = weighted_choice(rng, weather_weights)
             time_of_day_label = weighted_choice(rng, time_weights)
+            leading_vehicle_model = choose_from_candidates(
+                rng, args.leading_vehicle_models, "leading vehicle models"
+            )
+            ego_vehicle_model = choose_from_candidates(
+                rng, args.ego_vehicle_models, "ego vehicle models"
+            )
+            other_vehicle_model = choose_from_candidates(
+                rng, args.other_vehicle_models, "other vehicle models"
+            )
             entries.append(
                 {
                     "data_id": data_id,
@@ -456,6 +513,9 @@ def build_entries(args, route_entries):
                         weather_label,
                         time_of_day_label,
                         scenario_number,
+                        leading_vehicle_model,
+                        ego_vehicle_model,
+                        other_vehicle_model,
                     ),
                 }
             )

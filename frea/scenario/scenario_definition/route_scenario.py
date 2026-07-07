@@ -91,6 +91,7 @@ class RouteScenario():
             scenario2_defaults = {
                 'target_outcome': 'normal',
                 'scenario_type_id': 2,
+                'ego_vehicle_model': 'vehicle.lincoln.mkz_2017',
                 'leading_vehicle_model': 'vehicle.tesla.model3',
                 'other_vehicle_model': 'vehicle.audi.tt',
                 'other_actor_source': 'left',
@@ -931,13 +932,18 @@ class RouteScenario():
 
     def _spawn_ego_vehicle(self, elevate_transform, autopilot=False):
         role_name = 'ego_vehicle' + str(self.ego_id)
+        vehicle_model = 'vehicle.lincoln.mkz_2017'
+        parameters = getattr(self.config, 'parameters', None) or {}
+        configured_vehicle_model = parameters.get('ego_vehicle_model')
+        if configured_vehicle_model:
+            vehicle_model = configured_vehicle_model
 
         success = False
         ego_vehicle = None
         while not success:
             try:
                 ego_vehicle = CarlaDataProvider.request_new_actor(
-                    'vehicle.lincoln.mkz_2017',
+                    vehicle_model,
                     elevate_transform,
                     rolename=role_name, 
                     autopilot=autopilot

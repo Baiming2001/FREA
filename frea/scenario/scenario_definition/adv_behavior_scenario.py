@@ -92,6 +92,23 @@ class AdvBehaviorSingle(BasicScenario):
             z=float(transform_dict.get('z', 0.0))
         )
 
+    def _get_transform_parameter(self, key_name):
+        transform_dict = self.scripted_parameters.get(key_name)
+        if transform_dict is None:
+            return None
+        return carla.Transform(
+            location=carla.Location(
+                x=float(transform_dict['x']),
+                y=float(transform_dict['y']),
+                z=float(transform_dict.get('z', 0.0))
+            ),
+            rotation=carla.Rotation(
+                pitch=float(transform_dict.get('pitch', 0.0)),
+                yaw=float(transform_dict.get('yaw', 0.0)),
+                roll=float(transform_dict.get('roll', 0.0))
+            )
+        )
+
     def _follow_route_with_pid(self, role_name, target_speed, lookahead_steps=8, reach_threshold_m=4.0):
         actor = self.special_actors.get(role_name)
         actor_index = self.special_actor_indices.get(role_name)
@@ -151,6 +168,18 @@ class AdvBehaviorSingle(BasicScenario):
     def _get_speed_with_variation(self, base_speed, variation_amplitude):
         variation = variation_amplitude * np.sin(self.script_step * 0.25)
         return max(0.0, base_speed + variation)
+
+    def _compute_anchor_relative_progress(self, anchor_transform, ego_location):
+        if anchor_transform is None or ego_location is None:
+            return None, None
+
+        anchor_location = anchor_transform.location
+        anchor_forward = anchor_transform.get_forward_vector()
+        relative_x = ego_location.x - anchor_location.x
+        relative_y = ego_location.y - anchor_location.y
+        longitudinal = relative_x * anchor_forward.x + relative_y * anchor_forward.y
+        lateral = abs(relative_x * anchor_forward.y - relative_y * anchor_forward.x)
+        return longitudinal, lateral
 
     def _update_scripted_special_actors(self):
         if not self.special_actors:
@@ -213,14 +242,15 @@ class AdvBehaviorSingle(BasicScenario):
     def _update_scenario2_special_actors(self):
         leading_actor = self.special_actors.get('leading')
         if leading_actor is not None:
-            anchor_location = self._get_transform_parameter_location('leading_driving_anchor_transform')
-            if anchor_location is None:
+            anchor_transform = self._get_transform_parameter('leading_driving_anchor_transform')
+            if anchor_transform is None:
                 self.should_terminate = False
                 return
 
             ego_location = CarlaDataProvider.get_location(self.ego_vehicle)
             ego_speed = calculate_abs_velocity(CarlaDataProvider.get_velocity(self.ego_vehicle))
             leading_location = CarlaDataProvider.get_location(leading_actor)
+            anchor_location = anchor_transform.location
 
             release_distance = float(self.scripted_parameters.get('leading_release_distance_m', 18.0))
             leading_speed = float(self.scripted_parameters.get('leading_target_speed_mps', 7.0))
@@ -229,6 +259,7 @@ class AdvBehaviorSingle(BasicScenario):
             leading_min_travel_distance = float(self.scripted_parameters.get('leading_min_travel_distance_m', 14.0))
             leading_prefer_special_route = bool(self.scripted_parameters.get('leading_prefer_special_route', True))
             ego_clear_distance = float(self.scripted_parameters.get('ego_clear_distance_m', 22.0))
+            target_outcome = str(self.scripted_parameters.get('target_outcome', 'normal')).lower()
             other_base_speed = float(self.scripted_parameters.get('other_target_speed_mps', 8.0))
             other_speed_variation = float(self.scripted_parameters.get('other_speed_variation_mps', 0.1))
             other_min_follow_distance = float(self.scripted_parameters.get('other_min_follow_distance_m', 8.0))
@@ -243,6 +274,7 @@ class AdvBehaviorSingle(BasicScenario):
             hold_steps_needed = max(1, int(scene_end_after_stop_seconds / self.fixed_delta_seconds))
 
             anchor_distance = ego_location.distance(anchor_location)
+            anchor_longitudinal, anchor_lateral = self._compute_anchor_relative_progress(anchor_transform, ego_location)
             initial_leading_location = self.script_state.setdefault(
                 'scenario2_leading_initial_location',
                 carla.Location(x=leading_location.x, y=leading_location.y, z=leading_location.z)
@@ -255,10 +287,22 @@ class AdvBehaviorSingle(BasicScenario):
             ego_travel_distance = ego_location.distance(initial_ego_location)
 
             released = self.script_state.get('scenario2_leading_released', False)
-            if not released and anchor_distance <= release_distance:
-                released = True
-                self.script_state['scenario2_leading_released'] = True
-                self.script_state['scenario2_release_step'] = self.script_step
+            if not released:
+                should_release = anchor_distance <= release_distance
+                if target_outcome == 'collision' and anchor_longitudinal is not None:
+                    # For collision scenes, keep the parked car waiting until ego is nearly alongside
+                    # the parking anchor instead of using a coarse Euclidean trigger.
+                    collision_release_margin = min(2.0, release_distance * 0.25)
+                    max_lateral_for_collision = max(5.0, release_distance)
+                    should_release = (
+                        anchor_lateral is not None
+                        and anchor_lateral <= max_lateral_for_collision
+                        and anchor_longitudinal >= -collision_release_margin
+                    )
+                if should_release:
+                    released = True
+                    self.script_state['scenario2_leading_released'] = True
+                    self.script_state['scenario2_release_step'] = self.script_step
 
             if released:
                 merge_completed = leading_travel_distance >= leading_min_travel_distance
