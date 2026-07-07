@@ -152,6 +152,15 @@ class AdvBehaviorSingle(BasicScenario):
         variation = variation_amplitude * np.sin(self.script_step * 0.25)
         return max(0.0, base_speed + variation)
 
+    def _get_smooth_release_speed(self, target_speed, release_step, initial_speed, ramp_seconds):
+        if ramp_seconds <= 0.0:
+            return target_speed
+
+        elapsed_seconds = max(0.0, (self.script_step - release_step) * self.fixed_delta_seconds)
+        progress = min(1.0, elapsed_seconds / ramp_seconds)
+        smooth_progress = progress * progress * (3.0 - 2.0 * progress)
+        return initial_speed + (target_speed - initial_speed) * smooth_progress
+
     def _update_scripted_special_actors(self):
         if not self.special_actors:
             return
@@ -225,6 +234,10 @@ class AdvBehaviorSingle(BasicScenario):
             release_distance = float(self.scripted_parameters.get('leading_release_distance_m', 18.0))
             leading_speed = float(self.scripted_parameters.get('leading_target_speed_mps', 7.0))
             leading_post_merge_speed = float(self.scripted_parameters.get('leading_post_merge_speed_mps', leading_speed))
+            leading_merge_speed = float(self.scripted_parameters.get('leading_merge_speed_mps', min(leading_speed, 2.5)))
+            leading_merge_distance = float(self.scripted_parameters.get('leading_merge_distance_m', 4.0))
+            leading_release_initial_speed = float(self.scripted_parameters.get('leading_release_initial_speed_mps', 0.8))
+            leading_release_ramp_seconds = float(self.scripted_parameters.get('leading_release_ramp_seconds', 1.4))
             leading_lookahead_distance = float(self.scripted_parameters.get('leading_lookahead_distance_m', 10.0))
             leading_min_travel_distance = float(self.scripted_parameters.get('leading_min_travel_distance_m', 14.0))
             ego_clear_distance = float(self.scripted_parameters.get('ego_clear_distance_m', 22.0))
@@ -261,6 +274,16 @@ class AdvBehaviorSingle(BasicScenario):
 
             if released:
                 target_speed = leading_post_merge_speed if leading_travel_distance >= leading_min_travel_distance else leading_speed
+                leading_anchor_distance = leading_location.distance(anchor_location)
+                if leading_anchor_distance > leading_merge_distance:
+                    target_speed = min(target_speed, leading_merge_speed)
+                release_step = int(self.script_state.get('scenario2_release_step', self.script_step))
+                target_speed = self._get_smooth_release_speed(
+                    target_speed,
+                    release_step,
+                    leading_release_initial_speed,
+                    leading_release_ramp_seconds
+                )
                 self._follow_lane_with_pid('leading', target_speed, lookahead_distance=leading_lookahead_distance)
             else:
                 self.scenario_operation.brake(leading_actor)

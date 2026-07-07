@@ -17,7 +17,7 @@ from frea.gym_carla.envs.utils import get_locations_nearby_spawn_points, calcula
 from frea.scenario.scenario_manager.timer import GameTime
 from frea.scenario.scenario_manager.carla_data_provider import CarlaDataProvider
 
-from frea.scenario.tools.route_manipulation import interpolate_trajectory
+from frea.scenario.tools.route_manipulation import interpolate_trajectory, location_route_to_gps, _get_latlon_ref
 from frea.scenario.tools.scenario_utils import (
     get_valid_spawn_points,
     convert_transform_to_location
@@ -98,6 +98,10 @@ class RouteScenario():
                 'leading_release_distance_m': 14.0,
                 'leading_target_speed_mps': 7.0,
                 'leading_post_merge_speed_mps': 8.0,
+                'leading_merge_speed_mps': 2.5,
+                'leading_merge_distance_m': 4.0,
+                'leading_release_initial_speed_mps': 0.8,
+                'leading_release_ramp_seconds': 1.4,
                 'leading_lookahead_distance_m': 10.0,
                 'leading_min_travel_distance_m': 14.0,
                 'min_leading_ego_distance_m': 12.0,
@@ -114,10 +118,10 @@ class RouteScenario():
                 'other_start_boost_speed_threshold_mps': 5.0,
                 'other_lane_side': 'right',
                 'ego_clear_distance_m': 22.0,
+                'ego_spawn_back_distance_m': 12.0,
                 'scene_end_after_stop_seconds': 0.5,
                 'ego_reaction_delay_seconds': 0.0,
                 'ego_min_throttle_during_delay': 0.0,
-                'route_start_ratio': 0.0,
                 'route_start_min_remaining_points': 8,
                 'trigger_position_x': trigger_position.get('x'),
                 'trigger_position_y': trigger_position.get('y'),
@@ -169,12 +173,6 @@ class RouteScenario():
             target_outcome = str(parameters.get('target_outcome', scenario2_defaults['target_outcome'])).lower()
             scenario2_defaults.update(outcome_profiles.get(target_outcome, {}))
             scenario2_defaults.update(parameters)
-            if (
-                str(scenario2_defaults.get('leading_spawn_mode', '')).lower() == 'parking'
-                and 'route_start_ratio' not in parameters
-            ):
-                leading_route_progress = float(scenario2_defaults.get('leading_route_progress_ratio', 0.0))
-                scenario2_defaults['route_start_ratio'] = max(0.0, min(0.65, leading_route_progress - 0.12))
             scenario2_defaults['target_outcome'] = target_outcome
             self.config.parameters = copy.deepcopy(scenario2_defaults)
             return scenario2_defaults
@@ -332,6 +330,106 @@ class RouteScenario():
         if len(sliced_route) < min_remaining_points:
             return gps_route, route
         return sliced_gps_route, sliced_route
+
+    def _resolve_type2_anchor_waypoint(self, scenario_params):
+        driving_anchor_transform = self._build_transform_from_parameter('leading_driving_anchor_transform')
+        if driving_anchor_transform is None:
+            return None
+        return self.world.get_map().get_waypoint(
+            driving_anchor_transform.location,
+            project_to_road=True,
+            lane_type=carla.LaneType.Driving
+        )
+
+    def _resolve_type2_ego_start_waypoint(self, anchor_waypoint, scenario_params):
+        if anchor_waypoint is None:
+            return None
+
+        back_distance = max(
+            float(scenario_params.get('ego_spawn_back_distance_m', 12.0)),
+            float(scenario_params.get('min_leading_ego_distance_m', 12.0))
+        )
+        candidate_distances = [
+            back_distance,
+            back_distance + 4.0,
+            back_distance + 8.0,
+            max(6.0, back_distance - 2.0),
+        ]
+
+        for candidate_distance in candidate_distances:
+            candidate_waypoint = self._get_same_lane_rear_waypoint(anchor_waypoint, candidate_distance)
+            if self._is_waypoint_behind_reference(anchor_waypoint, candidate_waypoint, min_back_distance=1.0):
+                return candidate_waypoint
+
+        return None
+
+    def _select_projected_route_candidate(self, current_waypoint, reference_transform, candidate_waypoints):
+        if current_waypoint is None or not candidate_waypoints:
+            return None
+
+        reference_location = reference_transform.location
+        best_candidate = None
+        best_score = None
+        for candidate in candidate_waypoints:
+            same_direction_penalty = 0 if self._is_same_direction_lane(current_waypoint, candidate, min_dot=0.35) else 50.0
+            same_lane_penalty = 0 if (
+                candidate.road_id == current_waypoint.road_id
+                and candidate.lane_id == current_waypoint.lane_id
+            ) else 5.0
+            distance_penalty = candidate.transform.location.distance(reference_location)
+            score = (same_direction_penalty, same_lane_penalty, distance_penalty)
+            if best_score is None or score < best_score:
+                best_score = score
+                best_candidate = candidate
+        return best_candidate
+
+    def _build_projected_route_from_waypoint(self, start_waypoint, reference_route):
+        if start_waypoint is None or not reference_route:
+            return None, None
+
+        projected_route = [(start_waypoint.transform, reference_route[0][1])]
+        current_waypoint = start_waypoint
+
+        for index in range(1, len(reference_route)):
+            previous_transform, _ = reference_route[index - 1]
+            reference_transform, reference_option = reference_route[index]
+            step_distance = max(1.0, previous_transform.location.distance(reference_transform.location))
+            candidate_waypoints = current_waypoint.next(step_distance)
+            if not candidate_waypoints:
+                candidate_waypoints = current_waypoint.next(max(1.0, step_distance * 0.5))
+            if not candidate_waypoints:
+                break
+
+            next_waypoint = self._select_projected_route_candidate(
+                current_waypoint,
+                reference_transform,
+                candidate_waypoints
+            )
+            if next_waypoint is None:
+                break
+
+            current_waypoint = next_waypoint
+            projected_route.append((current_waypoint.transform, reference_option))
+
+        if len(projected_route) < 2:
+            continuation_transforms = self._build_lane_continuation_route(
+                start_waypoint,
+                step_distance=5.0,
+                max_points=max(30, len(reference_route))
+            )
+            if len(continuation_transforms) < 2:
+                return None, None
+            projected_route = [
+                (
+                    transform,
+                    reference_route[min(index, len(reference_route) - 1)][1]
+                )
+                for index, transform in enumerate(continuation_transforms)
+            ]
+
+        lat_ref, lon_ref = _get_latlon_ref(self.world)
+        gps_route = location_route_to_gps(projected_route, lat_ref, lon_ref)
+        return gps_route, projected_route
 
     def _get_adjacent_driving_lane(self, waypoint, lane_side):
         candidate = waypoint.get_left_lane() if lane_side == 'left' else waypoint.get_right_lane()
@@ -528,9 +626,9 @@ class RouteScenario():
             self._spawn_special_actor('other', other_waypoint.transform, scenario_params['other_vehicle_model'])
             leading_route = self._build_special_actor_route(anchor_waypoint)
             if str(scenario_params.get('leading_spawn_mode', '')).lower() == 'parking':
-                lane_continuation_route = self._build_lane_continuation_route(anchor_waypoint)
-                if lane_continuation_route:
-                    leading_route = lane_continuation_route
+                parking_merge_route = self._build_parking_merge_route(roadside_transform, anchor_waypoint)
+                if parking_merge_route:
+                    leading_route = parking_merge_route
             special_actor_routes = {
                 'leading': leading_route,
                 'other': self._build_special_actor_route(other_waypoint),
@@ -640,6 +738,56 @@ class RouteScenario():
 
         return route if len(route) >= 2 else []
 
+    def _build_parking_merge_route(self, roadside_transform, anchor_waypoint):
+        if roadside_transform is None or anchor_waypoint is None:
+            return []
+
+        anchor_transform = anchor_waypoint.transform
+        roadside_location = roadside_transform.location
+        anchor_location = anchor_transform.location
+        roadside_forward = roadside_transform.get_forward_vector()
+
+        merge_route = [roadside_transform]
+        previous_location = roadside_location
+        blend_factors = [0.18, 0.4, 0.68]
+        forward_biases = [1.8, 1.2, 0.6]
+
+        for blend_factor, forward_bias in zip(blend_factors, forward_biases):
+            blended_location = carla.Location(
+                x=roadside_location.x + (anchor_location.x - roadside_location.x) * blend_factor,
+                y=roadside_location.y + (anchor_location.y - roadside_location.y) * blend_factor,
+                z=roadside_location.z + (anchor_location.z - roadside_location.z) * blend_factor
+            )
+            blended_location.x += roadside_forward.x * forward_bias
+            blended_location.y += roadside_forward.y * forward_bias
+
+            if blended_location.distance(previous_location) < 0.8:
+                continue
+
+            blended_yaw = roadside_transform.rotation.yaw + (
+                anchor_transform.rotation.yaw - roadside_transform.rotation.yaw
+            ) * blend_factor
+            merge_route.append(
+                carla.Transform(
+                    location=blended_location,
+                    rotation=carla.Rotation(
+                        pitch=anchor_transform.rotation.pitch,
+                        yaw=blended_yaw,
+                        roll=anchor_transform.rotation.roll
+                    )
+                )
+            )
+            previous_location = blended_location
+
+        if anchor_location.distance(previous_location) > 0.8:
+            merge_route.append(anchor_transform)
+
+        continuation_route = self._build_lane_continuation_route(anchor_waypoint)
+        if continuation_route:
+            merge_route.extend(continuation_route[1:])
+
+        return merge_route
+
     def _initialize_scenario3_actors(self):
         scenario_params = self._get_scenario_parameters()
         carla_map = self.world.get_map()
@@ -686,18 +834,38 @@ class RouteScenario():
                 if ego_vehicle is not None:
                     break
         else:
-            route_start_ratio = 0.0
-            route_start_min_remaining_points = 20
-            if self.config.parameters is not None:
-                route_start_ratio = self.config.parameters.get('route_start_ratio', 0.0)
-                route_start_min_remaining_points = self.config.parameters.get('route_start_min_remaining_points', 20)
-            gps_route, route = interpolate_trajectory(self.world, self.config.trajectory)
-            gps_route, route = self._slice_dense_route_for_route_start(
-                gps_route,
-                route,
-                route_start_ratio,
-                min_remaining_points=int(route_start_min_remaining_points)
-            )
+            if self._is_custom_scenario_type(2):
+                scenario_params = self._get_scenario_parameters()
+                reference_gps_route, reference_route = interpolate_trajectory(self.world, self.config.trajectory)
+                anchor_waypoint = self._resolve_type2_anchor_waypoint(scenario_params)
+                if (
+                    str(scenario_params.get('leading_spawn_mode', '')).lower() == 'parking'
+                    and anchor_waypoint is not None
+                ):
+                    ego_start_waypoint = self._resolve_type2_ego_start_waypoint(anchor_waypoint, scenario_params)
+                    if ego_start_waypoint is None:
+                        raise RuntimeError('Failed to resolve custom Scenario 2 ego start waypoint behind leading parking anchor')
+                    gps_route, route = self._build_projected_route_from_waypoint(
+                        ego_start_waypoint,
+                        reference_route
+                    )
+                    if gps_route is None or route is None:
+                        raise RuntimeError('Failed to rebuild custom Scenario 2 ego route on the lane adjacent to leading parking')
+                else:
+                    gps_route, route = reference_gps_route, reference_route
+            else:
+                route_start_ratio = 0.0
+                route_start_min_remaining_points = 20
+                if self.config.parameters is not None:
+                    route_start_ratio = self.config.parameters.get('route_start_ratio', 0.0)
+                    route_start_min_remaining_points = self.config.parameters.get('route_start_min_remaining_points', 20)
+                gps_route, route = interpolate_trajectory(self.world, self.config.trajectory)
+                gps_route, route = self._slice_dense_route_for_route_start(
+                    gps_route,
+                    route,
+                    route_start_ratio,
+                    min_remaining_points=int(route_start_min_remaining_points)
+                )
             ego_vehicle = self._spawn_ego_vehicle(route[0][0], self.config.auto_ego)
 
         CarlaDataProvider.set_ego_vehicle_route(ego_vehicle, convert_transform_to_location(route))
