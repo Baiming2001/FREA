@@ -165,6 +165,24 @@ class RouteScenario():
                     'other_start_boost_speed_threshold_mps': 5.0,
                     'ego_clear_distance_m': 22.0,
                 },
+                'near_miss': {
+                    'leading_release_distance_m': 13.0,
+                    'leading_target_speed_mps': 8.0,
+                    'leading_post_merge_speed_mps': 9.0,
+                    'leading_min_travel_distance_m': 16.0,
+                    'other_use_adjacent_lane': False,
+                    'other_distance_back_m': 7.0,
+                    'other_target_speed_mps': 7.5,
+                    'other_speed_variation_mps': 0.1,
+                    'other_follow_speed_offset_mps': 0.0,
+                    'other_min_follow_distance_m': 5.0,
+                    'other_far_follow_extra_mps': 1.0,
+                    'other_far_follow_distance_m': 14.0,
+                    'other_close_speed_penalty_mps': 0.1,
+                    'other_start_boost_mps': 4.0,
+                    'other_start_boost_speed_threshold_mps': 5.0,
+                    'ego_clear_distance_m': 22.0,
+                },
             }
             target_outcome = str(parameters.get('target_outcome', scenario2_defaults['target_outcome'])).lower()
             scenario2_defaults.update(outcome_profiles.get(target_outcome, {}))
