@@ -232,6 +232,12 @@ class AdvBehaviorSingle(BasicScenario):
             leading_location = CarlaDataProvider.get_location(leading_actor)
 
             release_distance = float(self.scripted_parameters.get('leading_release_distance_m', 18.0))
+            release_advance_probability = float(
+                self.scripted_parameters.get('leading_release_advance_probability', 0.0)
+            )
+            release_advance_seconds = float(
+                self.scripted_parameters.get('leading_release_advance_seconds', 0.4)
+            )
             release_advance_seconds_max = max(
                 0.0,
                 float(self.scripted_parameters.get('leading_release_advance_random_seconds_max', 0.0))
@@ -270,15 +276,18 @@ class AdvBehaviorSingle(BasicScenario):
             leading_travel_distance = leading_location.distance(initial_leading_location)
             ego_travel_distance = ego_location.distance(initial_ego_location)
 
-            release_advance_seconds = self.script_state.get('scenario2_leading_release_advance_seconds')
-            if release_advance_seconds is None:
-                release_advance_seconds = (
-                    float(np.random.uniform(0.0, release_advance_seconds_max))
-                    if release_advance_seconds_max > 0.0 else 0.0
-                )
-                self.script_state['scenario2_leading_release_advance_seconds'] = release_advance_seconds
+            sampled_release_advance_seconds = self.script_state.get('scenario2_leading_release_advance_seconds')
+            if sampled_release_advance_seconds is None:
+                if release_advance_probability > 0.0:
+                    early_release_flag = int(np.random.binomial(1, min(1.0, max(0.0, release_advance_probability))))
+                    sampled_release_advance_seconds = release_advance_seconds if early_release_flag == 1 else 0.0
+                elif release_advance_seconds_max > 0.0:
+                    sampled_release_advance_seconds = float(np.random.uniform(0.0, release_advance_seconds_max))
+                else:
+                    sampled_release_advance_seconds = 0.0
+                self.script_state['scenario2_leading_release_advance_seconds'] = sampled_release_advance_seconds
 
-            effective_release_distance = release_distance + max(0.0, ego_speed) * release_advance_seconds
+            effective_release_distance = release_distance + max(0.0, ego_speed) * sampled_release_advance_seconds
 
             released = self.script_state.get('scenario2_leading_released', False)
             if not released and anchor_distance <= effective_release_distance:
