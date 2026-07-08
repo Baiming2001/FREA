@@ -26,7 +26,7 @@ def parse_args():
         "--outcomes",
         nargs="+",
         default=["normal", "collision"],
-        choices=["normal", "collision"],
+        choices=["normal", "collision", "near_miss"],
         help="Outcome labels to generate for each selected parking route.",
     )
     parser.add_argument(

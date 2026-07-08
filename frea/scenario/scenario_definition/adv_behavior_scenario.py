@@ -235,10 +235,16 @@ class AdvBehaviorSingle(BasicScenario):
             release_advance_probability = float(
                 self.scripted_parameters.get('leading_release_advance_probability', 0.0)
             )
+            release_advance_seconds_min = float(
+                self.scripted_parameters.get('leading_release_advance_seconds_min', 0.0)
+            )
+            release_advance_seconds_max = float(
+                self.scripted_parameters.get('leading_release_advance_seconds_max', 0.4)
+            )
             release_advance_seconds = float(
                 self.scripted_parameters.get('leading_release_advance_seconds', 0.4)
             )
-            release_advance_seconds_max = max(
+            release_advance_random_seconds_max = max(
                 0.0,
                 float(self.scripted_parameters.get('leading_release_advance_random_seconds_max', 0.0))
             )
@@ -278,11 +284,16 @@ class AdvBehaviorSingle(BasicScenario):
 
             sampled_release_advance_seconds = self.script_state.get('scenario2_leading_release_advance_seconds')
             if sampled_release_advance_seconds is None:
-                if release_advance_probability > 0.0:
+                low = min(release_advance_seconds_min, release_advance_seconds_max)
+                high = max(release_advance_seconds_min, release_advance_seconds_max)
+                if release_advance_probability > 0.0 and high > 0.0:
                     early_release_flag = int(np.random.binomial(1, min(1.0, max(0.0, release_advance_probability))))
-                    sampled_release_advance_seconds = release_advance_seconds if early_release_flag == 1 else 0.0
-                elif release_advance_seconds_max > 0.0:
-                    sampled_release_advance_seconds = float(np.random.uniform(0.0, release_advance_seconds_max))
+                    if high > low:
+                        sampled_release_advance_seconds = high if early_release_flag == 1 else low
+                    else:
+                        sampled_release_advance_seconds = high
+                elif release_advance_random_seconds_max > 0.0:
+                    sampled_release_advance_seconds = float(np.random.uniform(0.0, release_advance_random_seconds_max))
                 else:
                     sampled_release_advance_seconds = 0.0
                 self.script_state['scenario2_leading_release_advance_seconds'] = sampled_release_advance_seconds
