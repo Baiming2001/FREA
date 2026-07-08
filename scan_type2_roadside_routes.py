@@ -136,27 +136,35 @@ def classify_lane_type(carla_module, waypoint):
 
 
 def find_roadside_candidate(carla_module, driving_waypoint, lane_side):
-    best_candidate = None
-    best_rank = None
-    best_score = None
-
     for hop, candidate in iter_outer_lanes(driving_waypoint, lane_side):
         lane_label = classify_lane_type(carla_module, candidate)
+        if lane_label == "driving":
+            # Parking across another driving lane is not adjacent enough for type-2.
+            return None
         if lane_label not in {"parking", "shoulder"}:
-            continue
+            return None
         if not is_same_direction(driving_waypoint, candidate):
+            return None
+        return candidate
+
+    return None
+
+
+def is_waypoint_near_junction(waypoint, sample_distances=(0.0, 3.0, 6.0)):
+    if waypoint is None:
+        return True
+
+    candidates = [waypoint]
+    for distance in sample_distances:
+        if distance <= 0.0:
             continue
+        candidates.extend(waypoint.next(distance) or [])
+        candidates.extend(waypoint.previous(distance) or [])
 
-        lateral_distance = candidate.transform.location.distance(driving_waypoint.transform.location)
-        lane_rank = 0 if lane_label == "parking" else 1
-        score = lateral_distance + hop * 0.5
-
-        if best_candidate is None or (lane_rank, score) < (best_rank, best_score):
-            best_candidate = candidate
-            best_rank = lane_rank
-            best_score = score
-
-    return best_candidate
+    for candidate in candidates:
+        if candidate is not None and getattr(candidate, "is_junction", False):
+            return True
+    return False
 
 
 def build_candidate_record(carla_module, driving_waypoint, roadside_waypoint, lane_side, route_index, route_length):
@@ -290,6 +298,8 @@ def scan_route(world, route_config, args, carla_module):
         for lane_side in ("right", "left"):
             roadside_waypoint = find_roadside_candidate(carla_module, driving_waypoint, lane_side)
             if roadside_waypoint is None:
+                continue
+            if is_waypoint_near_junction(driving_waypoint) or is_waypoint_near_junction(roadside_waypoint):
                 continue
 
             candidates.append(
