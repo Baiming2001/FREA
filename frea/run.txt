@@ -1,22 +1,5 @@
-python3 generate_type1_batch_config.py \
-  --root-dir /home/ubuntu/baiming/FREA \
-  --output /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type1_pilot_18.json \
-  --total-scenes 18 \
-  --seed 0
-
-python3 split_scenario_config_batches.py \
-  --input /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type1_pilot_18.json \
-  --output-dir /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type1_pilot_batches \
-  --batch-size 5 \
-  --group-by-split \
-  --split-subdirs \
-  --base-yaml /home/ubuntu/baiming/FREA/frea/scenario/config/standard_eval_type1.yaml \
-  --yaml-output-dir /home/ubuntu/baiming/FREA/frea/scenario/config/type1_pilot_batch_yamls \
-  --yaml-prefix standard_eval_type1_pilot
-
-python3 generate_type1_batch_config.py \
-  --root-dir /home/ubuntu/baiming/FREA \
-  --output /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type1_pilot_18.json \
-  --total-scenes 18 \
-  --route-fixed-outcomes collision normal \
-  --seed 0
+./images_to_video.sh \
+  -i "/media/ubuntu/TOSHIBA EXT1/diy/type1_130_route_batches/test/standard_eval_type1_type1_130_test_batch_00_data_0003_0042/ScenarioType1_SourceScenario5_Town05/camera_frames/data_0008/other/front" \
+  -o other_front.mp4 \
+  -r 30 \
+  --overwrite
