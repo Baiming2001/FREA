@@ -1,3 +1,17 @@
-python generate_type2_parking_test_config.py \
-  --input /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_route_scan_all_routes.json \
-  --output /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_parking_pilot.json
+python3 generate_type2_parking_test_config.py \
+  --input /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_route_scan.json \
+  --output /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_parking_pilot.json \
+  --towns Town05 \
+  --source-scenarios 1 5 \
+  --outcomes normal collision \
+  --split-name pilot \
+  --min-route-progress 0.05
+
+python3 scripts/run.py \
+  --agent_cfg expert.yaml \
+  --scenario_cfg standard_eval_type2_parking_pilot.yaml \
+  --mode eval \
+  --eval_mode render \
+  -sp \
+  --port 2000 \
+  --tm_port 8000
