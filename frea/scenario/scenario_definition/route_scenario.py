@@ -85,6 +85,61 @@ class RouteScenario():
 
     def _get_scenario_parameters(self):
         parameters = copy.deepcopy(self.config.parameters) if self.config.parameters is not None else {}
+        if self._is_custom_scenario_type(1):
+            scenario1_defaults = {
+                'target_outcome': 'near_miss',
+                'scenario_type_id': 1,
+                'ego_vehicle_model': 'vehicle.lincoln.mkz_2017',
+                'other_vehicle_model': 'vehicle.audi.tt',
+                'other_spawn_mode': 'adjacent_rear',
+                'other_lane_side': 'right',
+                'other_distance_back_m': 10.0,
+                'other_target_speed_mps': 8.0,
+                'other_speed_variation_mps': 0.1,
+                'other_follow_speed_offset_mps': 0.3,
+                'other_lookahead_distance_m': 10.0,
+                'route_start_min_remaining_points': 35,
+                'scene_total_seconds': 10.0,
+                'ego_loss_trigger_seconds': 6.0,
+                'ego_loss_duration_seconds': 2.5,
+                'ego_loss_ramp_seconds': 0.7,
+                'ego_loss_steer_magnitude': 0.75,
+                'ego_loss_direction': 'right',
+                'ego_loss_min_throttle': 0.25,
+                'ego_loss_max_brake': 0.0,
+            }
+            outcome_profiles = {
+                'collision': {
+                    'other_spawn_mode': 'adjacent_rear',
+                    'other_distance_back_m': 9.0,
+                    'other_target_speed_mps': 8.5,
+                    'other_speed_variation_mps': 0.05,
+                    'ego_loss_trigger_seconds': 6.0,
+                    'ego_loss_duration_seconds': 2.8,
+                    'ego_loss_ramp_seconds': 0.7,
+                    'ego_loss_steer_magnitude': 0.8,
+                    'ego_loss_min_throttle': 0.35,
+                    'ego_loss_max_brake': 0.0,
+                },
+                'near_miss': {
+                    'other_spawn_mode': 'adjacent_rear',
+                    'other_distance_back_m': 10.0,
+                    'other_target_speed_mps': 8.0,
+                    'other_speed_variation_mps': 0.1,
+                },
+                'normal': {
+                    'other_spawn_mode': 'adjacent_rear',
+                    'other_distance_back_m': 10.0,
+                    'other_target_speed_mps': 8.0,
+                    'other_speed_variation_mps': 0.1,
+                },
+            }
+            target_outcome = str(parameters.get('target_outcome', scenario1_defaults['target_outcome'])).lower()
+            scenario1_defaults.update(outcome_profiles.get(target_outcome, {}))
+            scenario1_defaults.update(parameters)
+            scenario1_defaults['target_outcome'] = target_outcome
+            self.config.parameters = copy.deepcopy(scenario1_defaults)
+            return scenario1_defaults
         if self._is_custom_scenario_type(2):
             scenario_description = getattr(self.config, 'scenario_description', None) or {}
             trigger_position = scenario_description.get('trigger_position') or {}
@@ -608,6 +663,22 @@ class RouteScenario():
 
         raise RuntimeError('Failed to place Scenario 3 other vehicle behind ego vehicle')
 
+    def _resolve_scenario1_other_waypoint(self, ego_start_waypoint, scenario_params):
+        spawn_mode = str(scenario_params.get('other_spawn_mode', 'adjacent_rear')).lower()
+        if spawn_mode == 'same_lane_rear':
+            other_waypoint = self._get_same_lane_rear_waypoint(
+                ego_start_waypoint,
+                scenario_params['other_distance_back_m']
+            )
+            if other_waypoint is not None and self._is_waypoint_behind_reference(
+                ego_start_waypoint,
+                other_waypoint,
+                min_back_distance=0.5
+            ):
+                return other_waypoint
+
+        return self._resolve_scenario3_other_waypoint(ego_start_waypoint, scenario_params)
+
     def _spawn_special_actor(self, role_name, transform, vehicle_model):
         actor = CarlaDataProvider.request_new_actor(
             vehicle_model,
@@ -858,6 +929,24 @@ class RouteScenario():
         }
         self.scenario_instance.set_special_actors(self.special_actors, scenario_params, special_actor_routes)
 
+    def _initialize_scenario1_actors(self):
+        scenario_params = self._get_scenario_parameters()
+        ego_start_waypoint = self.world.get_map().get_waypoint(
+            self.route[0][0].location,
+            project_to_road=True,
+            lane_type=carla.LaneType.Driving
+        )
+        if ego_start_waypoint is None:
+            raise RuntimeError('Failed to get ego start waypoint for Scenario 1')
+
+        other_waypoint = self._resolve_scenario1_other_waypoint(ego_start_waypoint, scenario_params)
+        self._spawn_special_actor('other', other_waypoint.transform, scenario_params['other_vehicle_model'])
+
+        special_actor_routes = {
+            'other': self._build_special_actor_route(other_waypoint),
+        }
+        self.scenario_instance.set_special_actors(self.special_actors, scenario_params, special_actor_routes)
+
     def _global_route_to_waypoints(self):
         waypoints_list = []
         waypoint_lane_road_ids = set()
@@ -940,13 +1029,16 @@ class RouteScenario():
 
     def _spawn_ego_vehicle(self, elevate_transform, autopilot=False):
         role_name = 'ego_vehicle' + str(self.ego_id)
+        ego_vehicle_model = 'vehicle.lincoln.mkz_2017'
+        if self.config.parameters is not None:
+            ego_vehicle_model = self.config.parameters.get('ego_vehicle_model', ego_vehicle_model)
 
         success = False
         ego_vehicle = None
         while not success:
             try:
                 ego_vehicle = CarlaDataProvider.request_new_actor(
-                    'vehicle.lincoln.mkz_2017',
+                    ego_vehicle_model,
                     elevate_transform,
                     rolename=role_name, 
                     autopilot=autopilot
@@ -972,6 +1064,8 @@ class RouteScenario():
         return amount, spawn_points
 
     def initialize_actors(self):
+        if self._is_custom_scenario_type(1):
+            self._initialize_scenario1_actors()
         if self._is_custom_scenario_type(2):
             self._initialize_scenario2_actors()
         if self._is_custom_scenario_type(3):
@@ -1050,15 +1144,15 @@ class RouteScenario():
             self.logger.log('>> Scenario stops due to max steps', color='yellow')
 
         custom_scenario_type = self._get_custom_scenario_type_id()
-        if custom_scenario_type in (2, 3) and ego_collision:
+        if custom_scenario_type in (1, 2, 3) and ego_collision:
             self.post_collision_steps += 1
             if self.post_collision_steps >= self.post_collision_hold_steps:
                 ego_stop = True
                 self.logger.log('>> Scenario stops 0.5s after collision', color='yellow')
-        elif custom_scenario_type in (2, 3):
+        elif custom_scenario_type in (1, 2, 3):
             self.post_collision_steps = 0
 
-        if custom_scenario_type in (2, 3) and self.scenario_instance.should_terminate_episode():
+        if custom_scenario_type in (1, 2, 3) and self.scenario_instance.should_terminate_episode():
             ego_stop = True
             self.logger.log('>> Scenario stops because scripted actors completed the intended interaction', color='yellow')
 

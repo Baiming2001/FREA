@@ -165,6 +165,11 @@ class AdvBehaviorSingle(BasicScenario):
         if not self.special_actors:
             return
 
+        if int(self.scripted_parameters.get('scenario_type_id', -1)) == 1:
+            self._update_scenario1_special_actors()
+            self.script_step += 1
+            return
+
         if int(self.scripted_parameters.get('scenario_type_id', -1)) == 2:
             self._update_scenario2_special_actors()
             self.script_step += 1
@@ -218,6 +223,26 @@ class AdvBehaviorSingle(BasicScenario):
             self.should_terminate = False
 
         self.script_step += 1
+
+    def _update_scenario1_special_actors(self):
+        other_actor = self.special_actors.get('other')
+        other_base_speed = float(self.scripted_parameters.get('other_target_speed_mps', 8.0))
+        other_speed_variation = float(self.scripted_parameters.get('other_speed_variation_mps', 0.1))
+        other_follow_speed_offset = float(self.scripted_parameters.get('other_follow_speed_offset_mps', 0.3))
+        other_lookahead_distance = float(self.scripted_parameters.get('other_lookahead_distance_m', 10.0))
+        scene_total_seconds = float(self.scripted_parameters.get('scene_total_seconds', 10.0))
+
+        if other_actor is not None:
+            ego_speed = calculate_abs_velocity(CarlaDataProvider.get_velocity(self.ego_vehicle))
+            target_other_reference_speed = max(other_base_speed, ego_speed + other_follow_speed_offset)
+            target_other_speed = self._get_speed_with_variation(
+                target_other_reference_speed,
+                other_speed_variation
+            )
+            self._follow_lane_with_pid('other', target_other_speed, lookahead_distance=other_lookahead_distance)
+
+        total_steps = max(1, int(scene_total_seconds / self.fixed_delta_seconds))
+        self.should_terminate = self.script_step >= total_steps
 
     def _update_scenario2_special_actors(self):
         leading_actor = self.special_actors.get('leading')

@@ -1,17 +1,22 @@
-python3 generate_type2_batch_config.py \
-  --input /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_route_scan.json \
-  --output /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_parking_75.json \
-  --total-scenes 75 \
-  --route-pool 1:9 5:4 5:5 5:6 5:8 5:10 \
-  --min-route-progress 0.05 \
+python3 generate_type1_batch_config.py \
+  --root-dir /home/ubuntu/baiming/FREA \
+  --output /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type1_pilot_18.json \
+  --total-scenes 18 \
   --seed 0
 
 python3 split_scenario_config_batches.py \
-  --input /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_parking_75.json \
-  --output-dir /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_batches \
+  --input /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type1_pilot_18.json \
+  --output-dir /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type1_pilot_batches \
   --batch-size 5 \
   --group-by-split \
   --split-subdirs \
-  --base-yaml /home/ubuntu/baiming/FREA/frea/scenario/config/standard_eval_type2_parking_pilot.yaml \
-  --yaml-output-dir /home/ubuntu/baiming/FREA/frea/scenario/config/type2_parking_75_batch_yamls \
-  --yaml-prefix standard_eval_type2_parking_75
+  --base-yaml /home/ubuntu/baiming/FREA/frea/scenario/config/standard_eval_type1.yaml \
+  --yaml-output-dir /home/ubuntu/baiming/FREA/frea/scenario/config/type1_pilot_batch_yamls \
+  --yaml-prefix standard_eval_type1_pilot
+
+python3 generate_type1_batch_config.py \
+  --root-dir /home/ubuntu/baiming/FREA \
+  --output /home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type1_pilot_18.json \
+  --total-scenes 18 \
+  --route-fixed-outcomes collision normal \
+  --seed 0

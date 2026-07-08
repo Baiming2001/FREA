@@ -234,11 +234,54 @@ class CarlaEnv(gym.Env):
             scenario_type_id = int(scenario_type_id)
         except (TypeError, ValueError):
             scenario_type_id = self.config.scenario_id
-        if scenario_type_id not in (2, 3):
+        if scenario_type_id not in (1, 2, 3):
             return throttle, steer, brake
 
         parameters = self.config.parameters
         target_outcome = str(parameters.get('target_outcome', '')).lower()
+
+        if scenario_type_id == 1:
+            if target_outcome != 'collision':
+                return throttle, steer, brake
+
+            trigger_after_seconds = float(parameters.get('ego_loss_trigger_seconds', 6.0))
+            loss_duration_seconds = float(parameters.get('ego_loss_duration_seconds', 2.5))
+            loss_ramp_seconds = float(parameters.get('ego_loss_ramp_seconds', 0.7))
+            steer_magnitude = abs(float(parameters.get('ego_loss_steer_magnitude', 0.75)))
+            min_throttle = float(parameters.get('ego_loss_min_throttle', 0.25))
+            max_brake = float(parameters.get('ego_loss_max_brake', 0.0))
+            direction_label = str(parameters.get('ego_loss_direction', 'right')).lower()
+            direction_sign = -1.0 if direction_label == 'left' else 1.0
+
+            if loss_duration_seconds <= 0.0 or steer_magnitude <= 0.0:
+                return throttle, steer, brake
+
+            trigger_start_step = int(trigger_after_seconds / self.fixed_delta_seconds)
+            loss_duration_steps = max(1, int(loss_duration_seconds / self.fixed_delta_seconds))
+            loss_end_step = trigger_start_step + loss_duration_steps
+            if self.time_step < trigger_start_step or self.time_step >= loss_end_step:
+                return throttle, steer, brake
+
+            ramp_steps = max(1, int(loss_ramp_seconds / self.fixed_delta_seconds))
+            ramp_steps = min(ramp_steps, max(1, loss_duration_steps // 2))
+            phase_step = self.time_step - trigger_start_step
+
+            if phase_step < ramp_steps:
+                normalized = phase_step / float(ramp_steps)
+            elif phase_step >= loss_duration_steps - ramp_steps:
+                remaining_steps = max(0, loss_end_step - self.time_step - 1)
+                normalized = remaining_steps / float(ramp_steps)
+            else:
+                normalized = 1.0
+
+            normalized = max(0.0, min(1.0, normalized))
+            smooth_gain = normalized * normalized * (3.0 - 2.0 * normalized)
+            steer_bias = direction_sign * steer_magnitude * smooth_gain
+            steer = float(np.clip(float(steer) + steer_bias, -1.0, 1.0))
+            throttle = max(float(throttle), min_throttle)
+            brake = min(float(brake), max_brake)
+            return throttle, steer, brake
+
         if target_outcome != 'collision':
             return throttle, steer, brake
 
@@ -784,9 +827,25 @@ class CarlaEnv(gym.Env):
         with open(meta_path, 'r', encoding='utf-8') as meta_file:
             metadata = json.load(meta_file)
 
-        accident_a = self.scene_had_ego_collision or self.scene_had_special_actor_collision
+        parameters = metadata.get('parameters') or {}
+        try:
+            scenario_type_id = int(parameters.get('scenario_type_id', metadata.get('scenario_id', self.config.scenario_id)))
+        except (TypeError, ValueError):
+            scenario_type_id = self.config.scenario_id
+        target_outcome = str(parameters.get('target_outcome', '')).lower()
+        forced_accident_a = scenario_type_id == 1 and target_outcome == 'collision'
+        accident_a = self.scene_had_ego_collision or self.scene_had_special_actor_collision or forced_accident_a
         metadata['accident_type'] = 'A' if accident_a else 'normal'
-        if self.scene_had_ego_collision and self.scene_had_special_actor_collision:
+
+        if forced_accident_a and self.scene_had_ego_collision and self.scene_had_special_actor_collision:
+            metadata['accident_type_reason'] = 'ego_loss_control_and_ego_and_special_actor_collision'
+        elif forced_accident_a and self.scene_had_ego_collision:
+            metadata['accident_type_reason'] = 'ego_loss_control_and_ego_collision'
+        elif forced_accident_a and self.scene_had_special_actor_collision:
+            metadata['accident_type_reason'] = 'ego_loss_control_and_special_actor_collision'
+        elif forced_accident_a:
+            metadata['accident_type_reason'] = 'ego_loss_control'
+        elif self.scene_had_ego_collision and self.scene_had_special_actor_collision:
             metadata['accident_type_reason'] = 'ego_and_special_actor_collision'
         elif self.scene_had_ego_collision:
             metadata['accident_type_reason'] = 'ego_collision'
@@ -1342,9 +1401,20 @@ class CarlaEnv(gym.Env):
         self._update_scene_metadata_result(base_dir)
         result_path = os.path.join(base_dir, 'scene_result.json')
         final_record = self.scenario_manager.running_record[-1] if self.scenario_manager.running_record else {}
+        parameters = self.config.parameters or {}
+        try:
+            scenario_type_id = int(parameters.get('scenario_type_id', self.config.scenario_id))
+        except (TypeError, ValueError):
+            scenario_type_id = self.config.scenario_id
+        target_outcome = str(parameters.get('target_outcome', '')).lower()
+        forced_accident_a = scenario_type_id == 1 and target_outcome == 'collision'
+        accident_type = 'A' if (self.scene_had_ego_collision or self.scene_had_special_actor_collision or forced_accident_a) else 'normal'
         result = {
             'ego_collision': self.scene_had_ego_collision,
             'special_actor_collision': self.scene_had_special_actor_collision,
+            'ego_loss_control_target': forced_accident_a,
+            'target_outcome': target_outcome,
+            'accident_type': accident_type,
             'time_steps': self.time_step,
             'route_completion': final_record.get('route_complete'),
             'current_game_time': final_record.get('current_game_time')
