@@ -782,7 +782,7 @@ class CarlaEnv(gym.Env):
             return
 
         with open(meta_path, 'r', encoding='utf-8') as meta_file:
-        metadata = json.load(meta_file)
+            metadata = json.load(meta_file)
 
         accident_a = self.scene_had_ego_collision or self.scene_had_special_actor_collision
         metadata['accident_type'] = 'A' if accident_a else 'normal'
