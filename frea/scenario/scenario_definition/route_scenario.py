@@ -332,6 +332,26 @@ class RouteScenario():
         return sliced_gps_route, sliced_route
 
     def _resolve_type2_anchor_waypoint(self, scenario_params):
+        roadside_transform = self._build_transform_from_parameter('leading_roadside_transform')
+        lane_type_label = str(scenario_params.get('leading_lane_type', 'parking')).lower()
+        roadside_lane_type = carla.LaneType.Parking if lane_type_label == 'parking' else carla.LaneType.Shoulder
+        lane_side = str(scenario_params.get('leading_spawn_side', 'right')).lower()
+
+        if roadside_transform is not None:
+            roadside_waypoint = self.world.get_map().get_waypoint(
+                roadside_transform.location,
+                project_to_road=False,
+                lane_type=roadside_lane_type
+            )
+            if roadside_waypoint is not None:
+                candidate_anchor = roadside_waypoint.get_left_lane() if lane_side == 'right' else roadside_waypoint.get_right_lane()
+                if (
+                    candidate_anchor is not None
+                    and candidate_anchor.lane_type == carla.LaneType.Driving
+                    and self._is_same_direction_lane(roadside_waypoint, candidate_anchor)
+                ):
+                    return candidate_anchor
+
         driving_anchor_transform = self._build_transform_from_parameter('leading_driving_anchor_transform')
         if driving_anchor_transform is None:
             return None
@@ -590,11 +610,7 @@ class RouteScenario():
         roadside_transform = self._build_transform_from_parameter('leading_roadside_transform')
         driving_anchor_transform = self._build_transform_from_parameter('leading_driving_anchor_transform')
         if roadside_transform is not None and driving_anchor_transform is not None:
-            anchor_waypoint = self.world.get_map().get_waypoint(
-                driving_anchor_transform.location,
-                project_to_road=True,
-                lane_type=carla.LaneType.Driving
-            )
+            anchor_waypoint = self._resolve_type2_anchor_waypoint(scenario_params)
             if anchor_waypoint is None:
                 raise RuntimeError('Failed to resolve custom Scenario 2 leading driving anchor waypoint')
 
@@ -782,7 +798,7 @@ class RouteScenario():
         if anchor_location.distance(previous_location) > 0.8:
             merge_route.append(anchor_transform)
 
-        continuation_route = self._build_lane_continuation_route(anchor_waypoint)
+        continuation_route = self._build_special_actor_route(anchor_waypoint)
         if continuation_route:
             merge_route.extend(continuation_route[1:])
 
