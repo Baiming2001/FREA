@@ -286,8 +286,15 @@ def scan_route(world, route_config, args, carla_module):
         }
 
     total_points = len(dense_route)
-    start_index = min(total_points - 1, max(0, int(math.floor(args.min_route_progress * total_points))))
-    end_index = min(total_points, max(start_index + 1, int(math.ceil(args.max_route_progress * total_points))))
+    route_span = max(1, total_points - 1)
+    start_index = min(
+        total_points - 1,
+        max(0, int(math.ceil(args.min_route_progress * route_span))),
+    )
+    end_index = min(
+        total_points,
+        max(start_index + 1, int(math.floor(args.max_route_progress * route_span)) + 1),
+    )
 
     candidates = []
     sampled_points = 0

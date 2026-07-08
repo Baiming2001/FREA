@@ -87,7 +87,7 @@ def parse_args():
 
 
 def route_priority(route_entry):
-    candidate = route_entry["best_candidate"]
+    candidate = route_entry.get("selected_candidate") or route_entry["best_candidate"]
     lane_priority = 0 if candidate["lane_type"] == "parking" else 1
     progress_priority = abs(candidate["route_progress_ratio"] - 0.35)
     return (
@@ -101,7 +101,7 @@ def route_priority(route_entry):
 
 
 def candidate_geometry_key(route_entry):
-    candidate = route_entry["best_candidate"]
+    candidate = route_entry.get("selected_candidate") or route_entry["best_candidate"]
     driving = candidate["driving_transform"]
     roadside = candidate["roadside_transform"]
     return (
@@ -115,8 +115,32 @@ def candidate_geometry_key(route_entry):
     )
 
 
+def select_candidate(route_entry, min_route_progress):
+    candidates = route_entry.get("candidates", [])
+    if not candidates and route_entry.get("best_candidate") is not None:
+        candidates = [route_entry["best_candidate"]]
+
+    parking_candidates = []
+    for candidate in candidates:
+        if candidate.get("lane_type") != "parking":
+            continue
+        if float(candidate.get("route_progress_ratio", 0.0)) < min_route_progress:
+            continue
+        parking_candidates.append(candidate)
+
+    if not parking_candidates:
+        return None
+    parking_candidates.sort(
+        key=lambda candidate: (
+            abs(candidate["route_progress_ratio"] - 0.35),
+            candidate["lateral_distance_m"],
+        )
+    )
+    return parking_candidates[0]
+
+
 def build_parameters(args, route_entry, outcome, scenario_number):
-    candidate = route_entry["best_candidate"]
+    candidate = route_entry.get("selected_candidate") or route_entry["best_candidate"]
     return {
         "scenario_type_id": args.scenario_type_id,
         "scenario_subtype_id": args.scenario_subtype_id,
@@ -143,18 +167,18 @@ def main():
 
     filtered_routes = []
     for route_entry in routes:
-        candidate = route_entry.get("best_candidate")
-        if not route_entry.get("has_candidate") or candidate is None:
+        if not route_entry.get("has_candidate"):
             continue
-        if candidate.get("lane_type") != "parking":
-            continue
-        if float(candidate.get("route_progress_ratio", 0.0)) < args.min_route_progress:
+        candidate = select_candidate(route_entry, args.min_route_progress)
+        if candidate is None:
             continue
         if args.towns is not None and route_entry["town"] not in args.towns:
             continue
         if args.source_scenarios is not None and route_entry["source_scenario_id"] not in args.source_scenarios:
             continue
-        filtered_routes.append(route_entry)
+        selected_route_entry = dict(route_entry)
+        selected_route_entry["selected_candidate"] = candidate
+        filtered_routes.append(selected_route_entry)
 
     filtered_routes.sort(key=route_priority)
     if args.dedupe_geometry:
@@ -193,7 +217,7 @@ def main():
 
     print(f"Generated {len(entries)} test cases from {len(filtered_routes)} parking routes -> {args.output}")
     for route_entry in filtered_routes:
-        candidate = route_entry["best_candidate"]
+        candidate = route_entry.get("selected_candidate") or route_entry["best_candidate"]
         print(
             "  "
             f"town={route_entry['town']} "

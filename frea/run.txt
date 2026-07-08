@@ -9,13 +9,15 @@ python3 generate_type2_parking_test_config.py \
 
 python - <<'PY'
 import json
-path = "/home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_route_scan.json"
+path = "/home/ubuntu/baiming/FREA/frea/scenario/config/scenario_type/type2_parking_pilot.json"
 data = json.load(open(path))
-for r in data["routes"]:
-    sid = r["source_scenario_id"]
-    rid = r["route_id"]
-    best = r.get("best_candidate")
-    lane = best.get("lane_type") if best else None
-    prog = best.get("route_progress_ratio") if best else None
-    print(f"{sid}:{rid} has_candidate={r.get('has_candidate')} best_lane={lane} progress={prog}")
+for item in data:
+    p = item["parameters"]
+    print(
+        item["data_id"],
+        item["scenario_id"],
+        item["route_id"],
+        p["target_outcome"],
+        p["leading_route_progress_ratio"],
+    )
 PY
