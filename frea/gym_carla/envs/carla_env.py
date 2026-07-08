@@ -99,6 +99,7 @@ class CarlaEnv(gym.Env):
         self.CBVs_collision = {}
         self.ego_collide = False
         self.scene_had_ego_collision = False
+        self.scene_had_special_actor_collision = False
         self.front_camera_frame_idx = 0
         self.actor_camera_sensors = {}
         self.actor_camera_imgs = {}
@@ -106,6 +107,9 @@ class CarlaEnv(gym.Env):
         self.actor_lidar_sensors = {}
         self.actor_lidar_points = {}
         self.lidar_actor_ids = {}
+        self.special_actor_collision_sensors = {}
+        self.special_actor_collision_actor_ids = {}
+        self.special_actor_collision_events = {}
         self.export_queue = None
         self.export_worker = None
         self.export_stop_token = object()
@@ -544,6 +548,45 @@ class CarlaEnv(gym.Env):
         self.CBVs_collision_sensor[CBV.id] = collision_sensor
         self.CBVs_collision[CBV.id] = None
 
+    def _sync_special_actor_collision_sensors(self):
+        if self.ego_vehicle is None:
+            return
+
+        blueprint = CarlaDataProvider._blueprint_library.find('sensor.other.collision')
+        self_weakref = weakref.ref(self)
+
+        def record_collision(event, role_name):
+            self_strongref = self_weakref()
+            if self_strongref is not None:
+                self_strongref.special_actor_collision_events[role_name] = {
+                    'self_actor_id': event.actor.id,
+                    'other_actor_id': event.other_actor.id,
+                    'normal_impulse': [event.normal_impulse.x, event.normal_impulse.y, event.normal_impulse.z],
+                }
+
+        for role_name in ['leading', 'other']:
+            actor = self._get_camera_target_actor(role_name)
+            current_actor_id = actor.id if actor is not None else None
+            previous_actor_id = self.special_actor_collision_actor_ids.get(role_name)
+
+            if current_actor_id == previous_actor_id and role_name in self.special_actor_collision_sensors:
+                continue
+
+            sensor = self.special_actor_collision_sensors.pop(role_name, None)
+            if sensor is not None and sensor.is_alive:
+                sensor.stop()
+                sensor.destroy()
+            self.special_actor_collision_events[role_name] = None
+
+            if actor is None:
+                self.special_actor_collision_actor_ids.pop(role_name, None)
+                continue
+
+            collision_sensor = self.world.spawn_actor(blueprint, carla.Transform(), attach_to=actor)
+            collision_sensor.listen(lambda event, role=role_name: record_collision(event, role))
+            self.special_actor_collision_sensors[role_name] = collision_sensor
+            self.special_actor_collision_actor_ids[role_name] = current_actor_id
+
     def CBVs_selection(self):
         # when training the ego agent, don't need to calculate the CBV
         if self.scenario_agent_learnable and len(self.CBVs) < 2 and self.time_step % 2 == 0:
@@ -739,9 +782,18 @@ class CarlaEnv(gym.Env):
             return
 
         with open(meta_path, 'r', encoding='utf-8') as meta_file:
-            metadata = json.load(meta_file)
+        metadata = json.load(meta_file)
 
-        metadata['accident_type'] = 'A' if self.scene_had_ego_collision else 'normal'
+        accident_a = self.scene_had_ego_collision or self.scene_had_special_actor_collision
+        metadata['accident_type'] = 'A' if accident_a else 'normal'
+        if self.scene_had_ego_collision and self.scene_had_special_actor_collision:
+            metadata['accident_type_reason'] = 'ego_and_special_actor_collision'
+        elif self.scene_had_ego_collision:
+            metadata['accident_type_reason'] = 'ego_collision'
+        elif self.scene_had_special_actor_collision:
+            metadata['accident_type_reason'] = 'special_actor_collision'
+        else:
+            metadata['accident_type_reason'] = 'normal'
 
         with open(meta_path, 'w', encoding='utf-8') as meta_file:
             json.dump(metadata, meta_file, indent=2)
@@ -809,6 +861,7 @@ class CarlaEnv(gym.Env):
 
         # generate the initial background vehicles
         self._run_scenario()
+        self._sync_special_actor_collision_sensors()
         self._attach_sensor()
 
         # first update the info in the CarlaDataProvider
@@ -970,6 +1023,7 @@ class CarlaEnv(gym.Env):
 
         # update the self.ego_collide status
         self.get_ego_collision_status()
+        self.get_special_actor_collision_status()
 
         origin_info = self._get_info(next_info=True)  # info of old CBV
 
@@ -978,6 +1032,7 @@ class CarlaEnv(gym.Env):
 
         # select the new CBV
         self.CBVs_selection() if self.scenario_manager.running else None
+        self._sync_special_actor_collision_sensors()
         self._sync_actor_camera_sensors()
         self._sync_actor_lidar_sensors()
 
@@ -1256,6 +1311,25 @@ class CarlaEnv(gym.Env):
 
         self.logger.log(f'>> Ego collide', color='yellow') if self.ego_collide else None
 
+    def get_special_actor_collision_status(self):
+        leading_actor = self._get_camera_target_actor('leading')
+        other_actor = self._get_camera_target_actor('other')
+        if leading_actor is None or other_actor is None:
+            return
+
+        leading_event = self.special_actor_collision_events.get('leading')
+        other_event = self.special_actor_collision_events.get('other')
+        leading_other_collision = (
+            leading_event is not None and leading_event.get('other_actor_id') == other_actor.id
+        )
+        other_leading_collision = (
+            other_event is not None and other_event.get('other_actor_id') == leading_actor.id
+        )
+
+        if (leading_other_collision or other_leading_collision) and not self.scene_had_special_actor_collision:
+            self.scene_had_special_actor_collision = True
+            self.logger.log('>> Leading and other special actors collided', color='yellow')
+
     def _terminal(self):
         return not self.scenario_manager.running
 
@@ -1270,6 +1344,7 @@ class CarlaEnv(gym.Env):
         final_record = self.scenario_manager.running_record[-1] if self.scenario_manager.running_record else {}
         result = {
             'ego_collision': self.scene_had_ego_collision,
+            'special_actor_collision': self.scene_had_special_actor_collision,
             'time_steps': self.time_step,
             'route_completion': final_record.get('route_complete'),
             'current_game_time': final_record.get('current_game_time')
@@ -1299,6 +1374,14 @@ class CarlaEnv(gym.Env):
                     sensor.stop()
                     sensor.destroy()
             self.CBVs_collision_sensor = {}
+        if self.special_actor_collision_sensors:
+            for sensor in self.special_actor_collision_sensors.values():
+                if sensor is not None and sensor.is_alive:
+                    sensor.stop()
+                    sensor.destroy()
+            self.special_actor_collision_sensors = {}
+            self.special_actor_collision_actor_ids = {}
+            self.special_actor_collision_events = {}
 
     def _remove_CBV_sensor(self, CBV_id):
         sensor = self.CBVs_collision_sensor.pop(CBV_id, None)
@@ -1354,7 +1437,10 @@ class CarlaEnv(gym.Env):
         self.goal_waypoint = None
         self.ego_collide = False
         self.scene_had_ego_collision = False
+        self.scene_had_special_actor_collision = False
         self.CBVs_collision = {}
+        self.special_actor_collision_events = {}
+        self.special_actor_collision_actor_ids = {}
         self.front_camera_frame_idx = 0
         self.actor_camera_sensors = {}
         self.camera_actor_ids = {}
