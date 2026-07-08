@@ -97,6 +97,12 @@ class RouteScenario():
                 'other_target_speed_mps': 8.0,
                 'other_speed_variation_mps': 0.1,
                 'other_follow_speed_offset_mps': 0.3,
+                'other_min_follow_distance_m': 6.0,
+                'other_far_follow_extra_mps': 1.2,
+                'other_far_follow_distance_m': 14.0,
+                'other_close_speed_penalty_mps': 0.2,
+                'other_start_boost_mps': 2.5,
+                'other_start_boost_speed_threshold_mps': 3.0,
                 'other_lookahead_distance_m': 10.0,
                 'route_start_min_remaining_points': 35,
                 'scene_total_seconds': 10.0,
@@ -114,6 +120,12 @@ class RouteScenario():
                     'other_distance_back_m': 9.0,
                     'other_target_speed_mps': 8.5,
                     'other_speed_variation_mps': 0.05,
+                    'other_min_follow_distance_m': 6.5,
+                    'other_far_follow_extra_mps': 1.0,
+                    'other_far_follow_distance_m': 15.0,
+                    'other_close_speed_penalty_mps': 0.3,
+                    'other_start_boost_mps': 2.0,
+                    'other_start_boost_speed_threshold_mps': 3.5,
                     'ego_loss_trigger_seconds': 6.0,
                     'ego_loss_duration_seconds': 2.8,
                     'ego_loss_ramp_seconds': 0.7,
@@ -126,12 +138,24 @@ class RouteScenario():
                     'other_distance_back_m': 10.0,
                     'other_target_speed_mps': 8.0,
                     'other_speed_variation_mps': 0.1,
+                    'other_min_follow_distance_m': 6.0,
+                    'other_far_follow_extra_mps': 1.2,
+                    'other_far_follow_distance_m': 14.0,
+                    'other_close_speed_penalty_mps': 0.2,
+                    'other_start_boost_mps': 2.5,
+                    'other_start_boost_speed_threshold_mps': 3.0,
                 },
                 'normal': {
                     'other_spawn_mode': 'adjacent_rear',
                     'other_distance_back_m': 10.0,
                     'other_target_speed_mps': 8.0,
                     'other_speed_variation_mps': 0.1,
+                    'other_min_follow_distance_m': 6.0,
+                    'other_far_follow_extra_mps': 1.2,
+                    'other_far_follow_distance_m': 14.0,
+                    'other_close_speed_penalty_mps': 0.2,
+                    'other_start_boost_mps': 2.5,
+                    'other_start_boost_speed_threshold_mps': 3.0,
                 },
             }
             target_outcome = str(parameters.get('target_outcome', scenario1_defaults['target_outcome'])).lower()
@@ -942,8 +966,20 @@ class RouteScenario():
         other_waypoint = self._resolve_scenario1_other_waypoint(ego_start_waypoint, scenario_params)
         self._spawn_special_actor('other', other_waypoint.transform, scenario_params['other_vehicle_model'])
 
+        if (
+            other_waypoint.road_id != ego_start_waypoint.road_id
+            or other_waypoint.lane_id != ego_start_waypoint.lane_id
+        ):
+            _, projected_other_route = self._build_projected_route_from_waypoint(other_waypoint, self.route)
+            if projected_other_route is not None:
+                other_route = [transform for transform, _ in projected_other_route]
+            else:
+                other_route = self._build_special_actor_route(other_waypoint)
+        else:
+            other_route = self._build_special_actor_route(other_waypoint)
+
         special_actor_routes = {
-            'other': self._build_special_actor_route(other_waypoint),
+            'other': other_route,
         }
         self.scenario_instance.set_special_actors(self.special_actors, scenario_params, special_actor_routes)
 

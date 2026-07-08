@@ -43,9 +43,17 @@ def setup_logger_kwargs(output_dir, seed, mode, agent=None, scenario=None, CBV_s
     subfolder = ''.join([exp_name, '_seed', str(seed)])
     relpath = osp.join(relpath, subfolder)
 
-    data_dir = os.path.join(DEFAULT_DATA_DIR, output_dir)
+    if output_dir and osp.isabs(output_dir):
+        # When callers pass an absolute directory (for example batch export
+        # scripts on the remote Ubuntu machine), treat it as the final logging
+        # root instead of nesting another eval/seed path under it.
+        resolved_output_dir = output_dir
+    else:
+        data_dir = os.path.join(DEFAULT_DATA_DIR, output_dir)
+        resolved_output_dir = osp.join(data_dir, relpath)
+
     logger_kwargs = dict(
-        output_dir=osp.join(data_dir, relpath),
+        output_dir=resolved_output_dir,
         all_map_name=all_map_name
     )
     return logger_kwargs
