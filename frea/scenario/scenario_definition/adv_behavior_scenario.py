@@ -230,6 +230,7 @@ class AdvBehaviorSingle(BasicScenario):
         other_speed_variation = float(self.scripted_parameters.get('other_speed_variation_mps', 0.1))
         other_follow_speed_offset = float(self.scripted_parameters.get('other_follow_speed_offset_mps', 0.3))
         other_min_follow_distance = float(self.scripted_parameters.get('other_min_follow_distance_m', 6.0))
+        other_desired_rear_gap = float(self.scripted_parameters.get('other_desired_rear_gap_m', 9.5))
         other_far_follow_extra = float(self.scripted_parameters.get('other_far_follow_extra_mps', 1.2))
         other_far_follow_distance = float(self.scripted_parameters.get('other_far_follow_distance_m', 14.0))
         other_close_speed_penalty = float(self.scripted_parameters.get('other_close_speed_penalty_mps', 0.2))
@@ -237,34 +238,58 @@ class AdvBehaviorSingle(BasicScenario):
         other_start_boost_speed_threshold = float(
             self.scripted_parameters.get('other_start_boost_speed_threshold_mps', 3.0)
         )
+        other_max_catchup_speed_delta = float(
+            self.scripted_parameters.get('other_max_catchup_speed_delta_mps', 0.35)
+        )
         other_lookahead_distance = float(self.scripted_parameters.get('other_lookahead_distance_m', 10.0))
         scene_total_seconds = float(self.scripted_parameters.get('scene_total_seconds', 10.0))
 
         if other_actor is not None:
             ego_location = CarlaDataProvider.get_location(self.ego_vehicle)
             other_location = CarlaDataProvider.get_location(other_actor)
+            ego_transform = CarlaDataProvider.get_transform(self.ego_vehicle)
             ego_speed = calculate_abs_velocity(CarlaDataProvider.get_velocity(self.ego_vehicle))
             other_speed = calculate_abs_velocity(CarlaDataProvider.get_velocity(other_actor))
             other_distance_to_ego = other_location.distance(ego_location)
-            target_other_reference_speed = max(other_base_speed, ego_speed + other_follow_speed_offset)
+            ego_forward = ego_transform.get_forward_vector()
+            relative_x = other_location.x - ego_location.x
+            relative_y = other_location.y - ego_location.y
+            longitudinal_projection = relative_x * ego_forward.x + relative_y * ego_forward.y
+            rear_gap = max(0.0, -longitudinal_projection)
 
-            if other_distance_to_ego <= other_min_follow_distance:
-                target_other_speed = max(0.0, ego_speed - other_close_speed_penalty)
+            target_other_reference_speed = other_base_speed
+            capped_follow_speed = ego_speed + max(0.0, other_max_catchup_speed_delta)
+
+            if rear_gap <= other_min_follow_distance:
+                target_other_speed = max(0.0, ego_speed - (other_close_speed_penalty + 0.25))
+            elif rear_gap < other_desired_rear_gap:
+                gap_progress = (rear_gap - other_min_follow_distance) / max(
+                    1e-3,
+                    other_desired_rear_gap - other_min_follow_distance
+                )
+                gentle_target_speed = ego_speed - other_close_speed_penalty * (1.0 - gap_progress)
+                target_other_speed = min(capped_follow_speed, max(0.0, gentle_target_speed))
             else:
-                if other_distance_to_ego >= other_far_follow_distance:
+                target_other_reference_speed = max(
+                    target_other_reference_speed,
+                    min(capped_follow_speed, ego_speed + other_follow_speed_offset)
+                )
+                if rear_gap >= other_far_follow_distance:
                     target_other_reference_speed = max(
                         target_other_reference_speed,
-                        ego_speed + other_follow_speed_offset + other_far_follow_extra
+                        min(capped_follow_speed, ego_speed + other_follow_speed_offset + other_far_follow_extra)
                     )
                 if other_speed < other_start_boost_speed_threshold and ego_speed > other_speed:
                     target_other_reference_speed = max(
                         target_other_reference_speed,
-                        min(ego_speed + other_follow_speed_offset, other_speed + other_start_boost)
+                        min(capped_follow_speed, other_speed + other_start_boost)
                     )
                 target_other_speed = self._get_speed_with_variation(
                     target_other_reference_speed,
                     other_speed_variation
                 )
+                if other_distance_to_ego <= other_min_follow_distance + 1.0:
+                    target_other_speed = min(target_other_speed, capped_follow_speed)
             self._follow_lane_with_pid('other', target_other_speed, lookahead_distance=other_lookahead_distance)
 
         total_steps = max(1, int(scene_total_seconds / self.fixed_delta_seconds))
