@@ -96,6 +96,7 @@ class RouteScenario():
                 'other_actor_source': 'left',
                 'leading_spawn_mode': 'template',
                 'leading_release_distance_m': 14.0,
+                'leading_release_advance_random_seconds_max': 0.0,
                 'leading_target_speed_mps': 7.0,
                 'leading_post_merge_speed_mps': 8.0,
                 'leading_merge_speed_mps': 2.5,
@@ -130,6 +131,7 @@ class RouteScenario():
             outcome_profiles = {
                 'collision': {
                     'leading_release_distance_m': 7.5,
+                    'leading_release_advance_random_seconds_max': 0.5,
                     'leading_target_speed_mps': 7.5,
                     'leading_post_merge_speed_mps': 4.5,
                     'leading_lookahead_distance_m': 6.0,

@@ -232,6 +232,10 @@ class AdvBehaviorSingle(BasicScenario):
             leading_location = CarlaDataProvider.get_location(leading_actor)
 
             release_distance = float(self.scripted_parameters.get('leading_release_distance_m', 18.0))
+            release_advance_seconds_max = max(
+                0.0,
+                float(self.scripted_parameters.get('leading_release_advance_random_seconds_max', 0.0))
+            )
             leading_speed = float(self.scripted_parameters.get('leading_target_speed_mps', 7.0))
             leading_post_merge_speed = float(self.scripted_parameters.get('leading_post_merge_speed_mps', leading_speed))
             leading_merge_speed = float(self.scripted_parameters.get('leading_merge_speed_mps', min(leading_speed, 2.5)))
@@ -266,8 +270,18 @@ class AdvBehaviorSingle(BasicScenario):
             leading_travel_distance = leading_location.distance(initial_leading_location)
             ego_travel_distance = ego_location.distance(initial_ego_location)
 
+            release_advance_seconds = self.script_state.get('scenario2_leading_release_advance_seconds')
+            if release_advance_seconds is None:
+                release_advance_seconds = (
+                    float(np.random.uniform(0.0, release_advance_seconds_max))
+                    if release_advance_seconds_max > 0.0 else 0.0
+                )
+                self.script_state['scenario2_leading_release_advance_seconds'] = release_advance_seconds
+
+            effective_release_distance = release_distance + max(0.0, ego_speed) * release_advance_seconds
+
             released = self.script_state.get('scenario2_leading_released', False)
-            if not released and anchor_distance <= release_distance:
+            if not released and anchor_distance <= effective_release_distance:
                 released = True
                 self.script_state['scenario2_leading_released'] = True
                 self.script_state['scenario2_release_step'] = self.script_step
