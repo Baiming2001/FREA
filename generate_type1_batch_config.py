@@ -360,10 +360,11 @@ def main():
             f"{len(fixed_route_instances)}"
         )
 
-    route_allocation = allocate_route_counts(args.total_scenes - len(fixed_route_instances), route_pool)
+    remaining_scene_count = args.total_scenes - len(fixed_route_instances)
+    route_allocation = allocate_route_counts(remaining_scene_count, route_pool)
     split_quota = build_exact_quota(args.total_scenes, split_weights, ["train", "val", "test"])
     outcome_order = list(outcome_weights.keys())
-    outcome_quota = build_exact_quota(args.total_scenes, outcome_weights, outcome_order)
+    outcome_quota = build_exact_quota(remaining_scene_count, outcome_weights, outcome_order)
 
     split_labels = []
     for split_name in ["train", "val", "test"]:
@@ -371,13 +372,7 @@ def main():
 
     outcome_labels = []
     for outcome_name in outcome_order:
-        remaining_count = outcome_quota.get(outcome_name, 0) - fixed_outcomes.count(outcome_name) * len(route_pool)
-        if remaining_count < 0:
-            raise ValueError(
-                f"Requested fixed outcome '{outcome_name}' exceeds its total quota. "
-                "Increase --total-scenes or adjust --outcome-weights."
-            )
-        outcome_labels.extend([outcome_name] * remaining_count)
+        outcome_labels.extend([outcome_name] * outcome_quota.get(outcome_name, 0))
 
     rng = random.Random(args.seed)
     rng.shuffle(split_labels)
