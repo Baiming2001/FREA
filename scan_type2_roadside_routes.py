@@ -136,18 +136,27 @@ def classify_lane_type(carla_module, waypoint):
 
 
 def find_roadside_candidate(carla_module, driving_waypoint, lane_side):
+    best_candidate = None
+    best_rank = None
+    best_score = None
+
     for hop, candidate in iter_outer_lanes(driving_waypoint, lane_side):
         lane_label = classify_lane_type(carla_module, candidate)
-        if lane_label == "driving":
-            # Parking across another driving lane is not adjacent enough for type-2.
-            return None
         if lane_label not in {"parking", "shoulder"}:
-            return None
+            continue
         if not is_same_direction(driving_waypoint, candidate):
-            return None
-        return candidate
+            continue
 
-    return None
+        lateral_distance = candidate.transform.location.distance(driving_waypoint.transform.location)
+        lane_rank = 0 if lane_label == "parking" else 1
+        score = lateral_distance + hop * 0.5
+
+        if best_candidate is None or (lane_rank, score) < (best_rank, best_score):
+            best_candidate = candidate
+            best_rank = lane_rank
+            best_score = score
+
+    return best_candidate
 
 
 def is_waypoint_near_junction(waypoint, sample_distances=(0.0, 3.0, 6.0)):

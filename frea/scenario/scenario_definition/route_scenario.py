@@ -344,13 +344,17 @@ class RouteScenario():
                 lane_type=roadside_lane_type
             )
             if roadside_waypoint is not None:
-                candidate_anchor = roadside_waypoint.get_left_lane() if lane_side == 'right' else roadside_waypoint.get_right_lane()
-                if (
-                    candidate_anchor is not None
-                    and candidate_anchor.lane_type == carla.LaneType.Driving
-                    and self._is_same_direction_lane(roadside_waypoint, candidate_anchor)
-                ):
-                    return candidate_anchor
+                current_waypoint = roadside_waypoint
+                for _ in range(6):
+                    candidate_anchor = current_waypoint.get_left_lane() if lane_side == 'right' else current_waypoint.get_right_lane()
+                    if candidate_anchor is None:
+                        break
+                    if (
+                        candidate_anchor.lane_type == carla.LaneType.Driving
+                        and self._is_same_direction_lane(roadside_waypoint, candidate_anchor)
+                    ):
+                        return candidate_anchor
+                    current_waypoint = candidate_anchor
 
         driving_anchor_transform = self._build_transform_from_parameter('leading_driving_anchor_transform')
         if driving_anchor_transform is None:
